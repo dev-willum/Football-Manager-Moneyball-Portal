@@ -1,7 +1,42 @@
-// src/App.jsx — PART 1/2
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// src/App.jsx — FULL FILE — PART 1/2 (PATCH)
+import React, { useEffect, useCallback,useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import Papa from "papaparse";
+
+/* ===================== Search Input ===================== */
+const SearchInput = React.memo(({ className, placeholder, initialValue = "", onSearch }) => {
+  const [value, setValue] = useState(initialValue);
+  const inputRef = useRef(null);
+
+  const handleChange = (e) => {
+    setValue(e.target.value);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      onSearch(value);
+    } else if (e.key === "Escape") {
+      setValue("");
+      onSearch("");
+    }
+  };
+
+  useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
+
+  return (
+    <input
+      ref={inputRef}
+      className={className}
+      placeholder={placeholder}
+      value={value}
+      onChange={handleChange}
+      onKeyDown={handleKeyDown}
+      autoComplete="off"
+    />
+  );
+});
 
 /* ===================== Error Boundary ===================== */
 class ErrorBoundary extends React.Component {
@@ -65,6 +100,7 @@ body{
   margin:0; color:var(--ink);
   background: radial-gradient(1200px 800px at 20% -20%, ${themeName==="sleek"?"#141d2b": themeName==="dusk" ? "#141833" : "#ffffff"} 0%, var(--bg) 60%, var(--bg) 100%);
   font-family: GabaritoLocal, Gabarito, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
+  font-size: 15px;
 }
 .app{ display:flex; flex-direction:column; min-height:100vh; }
 .topbar{
@@ -77,7 +113,7 @@ body{
 .tabs{ display:flex; gap:8px; margin-left:16px; overflow:auto; padding:6px 0; }
 .tab{
   border:1px solid var(--cardBorder); background:color-mix(in oklab, var(--bg), white 4%); color:var(--ink);
-  border-radius:999px; padding:8px 12px; cursor:pointer; white-space:nowrap;
+  border-radius:999px; padding:9px 14px; cursor:pointer; white-space:nowrap; font-size:14px;
 }
 .tab:hover{ box-shadow: inset 0 0 0 1px var(--ring); }
 .tab.active{ border-color:var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -87,64 +123,118 @@ body{
   border-radius:999px; padding:8px 12px; cursor:pointer;
 }
 .segBtn.active{ border-color:var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.btn{ padding:9px 12px; border-radius:12px; border:1px solid var(--accent); background:var(--accent); color:white; cursor:pointer; font-weight:700; }
+.btn{ padding:10px 14px; border-radius:12px; border:1px solid var(--accent); background:var(--accent); color:white; cursor:pointer; font-weight:700; }
 .btn.ghost{ background:transparent; color:var(--accent); border-color:var(--accent); }
 .btn.ghost.tight{ padding:6px 10px; }
 .btn.ghost.alt{ color:var(--accent2); border-color:var(--accent2); }
-.input{ width:100%; padding:10px 12px; border-radius:12px; border:1px solid var(--cardBorder); background:color-mix(in oklab, var(--bg), white 4%); color:var(--ink); outline:none; }
-.input:focus{ box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 24%, transparent); border-color:var(--accent); }
+.input{ width:100%; padding:11px 12px; border-radius:12px; border:1px solid var(--cardBorder); background:color-mix(in oklab, var(--bg), white 4%); color:var(--ink); outline:none; font-size:14px; box-sizing:border-box; position:relative; z-index:10; }
+.input:focus{ box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 24%, transparent); border-color:var(--accent); z-index:15; }
+select.input{ min-width:0; max-width:100%; }
+.sectionBody .input{ width:100%; min-width:0; }
 .lbl{ font-size:12px; color:var(--muted); margin-bottom:4px; display:block; }
-.playerBar{ position:sticky; top:54px; z-index:9; background:var(--card); border-bottom:1px solid var(--cardBorder); }
-.playerHeader{ display:flex; align-items:center; gap:10px; margin-left:16px; padding:8px 8px; overflow:auto; white-space:nowrap; padding-bottom:6px; }
+
+.playerBar{ position:sticky; top:54px; z-index:9; background:var(--card); border-bottom:1px solid var(--cardBorder); max-height:200px; overflow:visible; }
+.playerHeader{
+  display:grid; grid-template-columns: 1fr; gap:6px;
+  padding:6px 8px; overflow:hidden;
+  white-space:normal;
+}
+.playerHeaderTop{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-left:2px; overflow:hidden; }
 .phName{
-  font-weight:800; padding:4px 10px; border-radius:10px;
+  font-weight:800; padding:4px 8px; border-radius:6px; font-size:14px;
   background:color-mix(in oklab, var(--bg), white 6%); border:1px solid var(--cardBorder);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; 
+  max-width:200px; min-width:0; flex-shrink:1;
 }
-.phKpis{ display:flex; gap:10px; margin-left:6px; }
+.badge{ font-size:10px; padding:2px 5px; border-radius:999px; border:1px solid var(--cardBorder); background:color-mix(in oklab, var(--bg), white 6%); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100px; }
+.phKpis{
+  display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap:4px; padding:0 4px 4px 4px;
+}
 .phKpi{
-  display:flex; gap:6px; background:color-mix(in oklab, var(--bg), white 6%); border:1px solid var(--cardBorder); border-radius:10px; padding:6px 8px;
+  display:flex; align-items:center; justify-content:space-between; gap:3px;
+  background:color-mix(in oklab, var(--bg), white 6%); border:1px solid var(--cardBorder);
+  border-radius:6px; padding:4px 6px; min-height:28px; position:relative; font-size:11px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-.wrap{
-  display:grid; grid-template-columns: 360px 1fr; gap:16px; padding:16px; max-width:1720px; margin:0 auto; width:100%;
+.phKpi div:first-child{ color:var(--muted); }
+.phKpi b{ font-weight:700; }
+
+.statRow{
+  display:flex; justify-content:space-between; align-items:center; padding:8px 0; 
+  border-bottom:1px solid color-mix(in oklab, var(--border), transparent 50%);
 }
+.statRow:last-child{ border-bottom:none; }
+
+.wrap{ display:grid; grid-template-columns: 400px 1fr; gap:0; max-width:2000px; margin:0 auto; width:100%; min-height:100vh; }
 @media(max-width:1200px){ .wrap{ grid-template-columns:1fr; } }
-.side{ display:flex; flex-direction:column; gap:12px; }
-.main{ display:flex; flex-direction:column; gap:16px; }
-.section{
-  background:var(--card); border:1px solid var(--cardBorder); border-radius:16px; overflow:hidden; box-shadow:0 12px 24px rgba(0,0,0,0.25);
+.side{ 
+  display:flex; 
+  flex-direction:column; 
+  gap:16px; 
+  min-width:0; 
+  align-items:stretch; 
+  position:sticky; 
+  top:0; 
+  height:100vh; 
+  overflow-y:auto; 
+  background:var(--card); 
+  border-right:1px solid var(--cardBorder); 
+  padding:16px 20px;
+  box-sizing:border-box;
+  z-index: 100;
 }
-.sectionHead{ padding:10px 12px; font-weight:700; border-bottom:1px solid var(--cardBorder); background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0)); }
-.sectionBody{ padding:12px; display:flex; flex-direction:column; gap:10px; }
+.main{ display:flex; flex-direction:column; gap:12px; min-width:0; padding:12px 16px; overflow:visible; min-height:100vh; }
+
+.section{
+  background:var(--card); border:1px solid var(--cardBorder); border-radius:16px; overflow:visible; box-shadow:0 12px 24px rgba(0,0,0,0.25);
+  margin: 16px 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+.sectionHead{ padding:12px 16px; font-weight:800; border-bottom:1px solid var(--cardBorder); background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0)); width:100%; box-sizing:border-box; font-size:14px; }
+.sectionBody{ padding:16px 20px 32px 20px; display:flex; flex-direction:column; gap:16px; overflow:visible; width:100%; box-sizing:border-box; }
+
 .card{
   background:var(--card); border:1px solid var(--cardBorder); border-radius:18px; overflow:hidden; box-shadow:0 16px 32px rgba(0,0,0,0.3);
 }
-.cardHead{ display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--cardBorder); background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0)); }
-.cardBody{ padding:14px; }
+.cardHead{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--cardBorder); background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0)); font-size:16px; }
+.cardBody{ padding:16px; }
 .row{ display:flex; gap:12px; align-items:center; }
 .col{ flex:1; min-width:0; }
-.table{ width:100%; border-collapse:collapse; }
-.table th, .table td{ padding:10px 12px; border-bottom:1px solid var(--cardBorder); text-align:left; font-size:13px; white-space:nowrap; }
-.scroll{ overflow:auto; border:1px solid var(--cardBorder); border-radius:12px; }
-.chipRow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-.chip{ border:1px solid var(--cardBorder); background:var(--chip); color:var(--ink); border-radius:999px; padding:6px 10px; cursor:pointer; font-size:12px; }
+
+.table{ width:100%; border-collapse:collapse; font-size:14px; table-layout:fixed; }
+.table th, .table td{ padding:8px 10px; border-bottom:1px solid var(--cardBorder); text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:0; }
+.table th:first-child, .table td:first-child{ min-width:120px; max-width:180px; }
+.scroll{ overflow:auto; border:1px solid var(--cardBorder); border-radius:12px; max-height:400px; }
+
+.chipRow{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; max-width:100%; overflow:hidden; }
+.chip{ border:1px solid var(--cardBorder); background:var(--chip); color:var(--ink); border-radius:999px; padding:6px 10px; cursor:pointer; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px; }
 .chip.active{ background:var(--chipActive); color:white; border-color:transparent; }
-.chartWrap{ width:100%; }
+
+.chartWrap{ width:100%; max-width:100%; overflow:hidden; }
 .d3tip{
-  max-width: 320px; background: color-mix(in oklab, var(--bg) 92%, black 0%);
+  max-width: 300px; background: color-mix(in oklab, var(--bg) 92%, black 0%);
   border:1px solid var(--cardBorder); border-radius: 12px; padding: 10px 12px; color: var(--ink);
-  filter: drop-shadow(0 12px 18px rgba(0,0,0,0.35)); backdrop-filter: blur(6px); z-index: 1000;
+  filter: drop-shadow(0 12px 18px rgba(0,0,0,0.35)); backdrop-filter: blur(6px); z-index: 1000; font-size:12px;
+  word-wrap:break-word; overflow-wrap:break-word;
 }
 .d3tip .t-title{ font-weight:800; margin-bottom:6px; display:flex; gap:8px; align-items:center; }
-.d3tip .t-badge{ margin-left:8px; font-size:11px; font-weight:700; color:var(--accent); background:rgba(78,161,255,0.12); border:1px solid rgba(78,161,255,0.35); padding:2px 6px; border-radius:999px; }
-.d3tip .t-row{ display:flex; justify-content:space-between; gap:12px; font-size:12px; padding:2px 0; }
+.d3tip .t-badge{ margin-left:8px; font-size:10px; font-weight:700; color:var(--accent); background:rgba(78,161,255,0.12); border:1px solid rgba(78,161,255,0.35); padding:2px 6px; border-radius:999px; }
+.d3tip .t-row{ display:flex; justify-content:space-between; gap:12px; font-size:11px; padding:2px 0; }
+
 .status{ font-size:12px; color:var(--muted); }
 .legendRow{ display:flex; flex-wrap:wrap; gap:10px; margin:8px 0 2px; }
-.legendItem{ display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+.legendItem{ display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
 .legendSwatch{ width:12px; height:12px; border-radius:3px; border:1px solid color-mix(in oklab, black 18%, transparent); }
-.badge{ font-size:11px; padding:3px 6px; border-radius:999px; border:1px solid var(--cardBorder); background:color-mix(in oklab, var(--bg), white 6%); }
 .deltaUp{ color:#18c27a; } .deltaDown{ color:#ff7d8a; }
 `;
 }
+
+
 
 /* ===================== Header rename (exact) ===================== */
 const RENAME_MAP = new Map(Object.entries({
@@ -155,7 +245,7 @@ const RENAME_MAP = new Map(Object.entries({
   "Yel":"Yellow Cards","xG":"Expected Goals","Starts":"Starts","Red":"Red Cards","PoM":"Player of the Match",
   "Pen/R":"Pens Scored Ratio","Pens S":"Pens Scored","Pens Saved Ratio":"Pens Saved Ratio","Pens Saved":"Pens Saved",
   "Pens Faced":"Pens Faced","Pens":"Pens","Mins":"Minutes","Gls/90":"Goals / 90","Conc":"Conceded","Gls":"Goals",
-  "Fls":"Fouls","FA":"Fouled","xG/90":"xG/90","xG-OP":"xG Overperformance","xA/90":"Expected Assists/90","xA":"Expected Assists",
+  "Fls":"Fouls","FA":"Fouled","xG/90":"xG/90","xA/90":"Expected Assists/90","xA":"Expected Assists",
   "Con/90":"Conceded/90","Clean Sheets":"Clean Sheets","Cln/90":"Clean Sheets/90","Av Rat":"Avg Rating",
   "Mins/Gl":"Minutes / Goal","Ast":"Assist","Hdrs A":"Headers Attempted","Apps":"Appearances",
   "Tck/90":"Tackles/90","Tck W":"Tackles Won","Tck A":"Tackles Attempted","Tck R":"Tackle Ratio",
@@ -175,10 +265,11 @@ const RENAME_MAP = new Map(Object.entries({
   "Goals Outside Box":"Goals Outside Box","xGP/90":"Expected Goals Prevented/90","xGP":"Expected Goals Prevented",
   "Drb/90":"Dribbles/90","Drb":"Dribbles","Distance":"Distance Covered (KM)","Cr C/90":"Crosses Completed/90","Cr C":"Crosses Completed",
   "Crs A/90":"Crosses Attempted/90","Cr A":"Crosses Attempted","Cr C/A":"Cross Completion Ratio","Conv %":"Conversion Rate",
-  "Clr/90":"Clearances/90","Clear":"Clearances","CCC":"Chances Created","Ch C/90":"Chances Created/90","Blk/90":"Blocks/90","Blk":"Blocks","Aer A/90":"Aerial Duels Attempted/90"
+  "Clr/90":"Clearances/90","Clear":"Clearances","CCC":"Chances Created","Ch C/90":"Chances Created/90",
+  "Blk/90":"Blocks/90","Blk":"Blocks","Aer A/90":"Aerial Duels Attempted/90"
 }));
 
-/* ===================== Labels for display (fallback to key) ===================== */
+/* ===================== Display labels ===================== */
 const LABELS = new Map([
   ["Pass Completion%","Pass %"],
   ["SoT/90","Shots on Target/90"],
@@ -196,8 +287,17 @@ const LESS_IS_BETTER = new Set(["Conceded/90","Goals Allowed/90","G/Sh","G/SoT"]
 const tf = (v, n = 1) => (Number.isFinite(v) ? Number(v).toFixed(n) : "—");
 const clamp100 = (x) => Math.max(0, Math.min(100, x));
 const decileBadge = (pct)=> pct>=90?"Top 10%": pct>=75?"Top 25%": pct>=50?"Top 50%": pct>=25?"Below Median":"Bottom 25%";
-const fmtPct2 = (v) => Number.isFinite(v) ? `${v.toFixed(2)}%` : "—";
+const money = (n) => {
+  if (!Number.isFinite(n)) return "—";
+  const sgn = n<0? "-" : "";
+  const x = Math.abs(n);
+  if (x >= 1e9) return `${sgn}£${(x/1e9).toFixed(2)}b`;
+  if (x >= 1e6) return `${sgn}£${(x/1e6).toFixed(2)}m`;
+  if (x >= 1e3) return `${sgn}£${(x/1e3).toFixed(0)}k`;
+  return `${sgn}£${x.toFixed(2)}`;
+};
 
+/* parse numeric-ish */
 const numerify = (v) => {
   if (v === null || v === undefined) return NaN;
   let s = String(v).trim();
@@ -209,15 +309,7 @@ const numerify = (v) => {
   return Number.isFinite(num) ? num * mult : NaN;
 };
 
-const prettyMoney = (n) => {
-  if (!Number.isFinite(n)) return "—";
-  if (Math.abs(n) >= 1e9) return `£${(n/1e9).toFixed(2)}b`;
-  if (Math.abs(n) >= 1e6) return `£${(n/1e6).toFixed(2)}m`;
-  if (Math.abs(n) >= 1e3) return `£${(n/1e3).toFixed(0)}k`;
-  return `£${n.toFixed(2)}`;
-};
-
-/* ===================== Money parsing ===================== */
+/* Money parsing */
 const MONEY_RE = /([£$€])?\s*([\d.,]+)\s*([KkMm])?/;
 function parseOneMoney(s) {
   if (!s) return NaN;
@@ -479,22 +571,73 @@ const ROLE_BOOK = {
 const ROLE_STATS = Object.fromEntries(Object.entries(ROLE_BOOK).map(([r,e]) => [r, Object.keys(e.weights)]));
 const ROLE_WEIGHTS = Object.fromEntries(Object.entries(ROLE_BOOK).map(([r,e]) => [r, e.weights]));
 const ROLE_BASELINES = Object.fromEntries(Object.entries(ROLE_BOOK).map(([r,e]) => [r, e.baseline || []]));
+const ALL_ROLE_STATS = Array.from(new Set(Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights))));
 
-/* ===================== Percentile util ===================== */
-function percentileFromSorted(v, arrAsc, lessIsBetter){
-  const N = arrAsc.length;
-  if (!Number.isFinite(v) || !N) return NaN;
-  let l = 0, r = N;
-  while (l < r) { const m = (l + r) >> 1; if (arrAsc[m] < v) l = m + 1; else r = m; }
-  const lo = l; l = 0; r = N;
-  while (l < r) { const m = (l + r) >> 1; if (arrAsc[m] <= v) l = m + 1; else r = m; }
+/* ===================== Percentiles ===================== */
+function getCell(obj, name) {
+  if (!obj) return undefined;
+  if (name in obj) return obj[name];
+  if (RENAME_MAP.has(name)) {
+    const mapped = RENAME_MAP.get(name);
+    if (mapped in obj) return obj[mapped];
+  }
+  const kn = keyNorm(name);
+  for (const k of Object.keys(obj)) if (keyNorm(k) === kn) return obj[k];
+  return undefined;
+}
+function numCell(obj, name) {
+  const raw = getCell(obj, name);
+  const n = numerify(raw);
+  return Number.isFinite(n) ? n : NaN;
+}
+function buildPercentileIndex(rows, statList) {
+  const out = new Map();
+  const list = statList || ALL_ROLE_STATS;
+  for (const stat of list) {
+    const vals = rows.map(r => numCell(r, stat)).filter(Number.isFinite).sort((a,b)=>a-b);
+    out.set(stat, vals);
+  }
+  return out;
+}
+function percentileFor(pctIndex, stat, value) {
+  const arrAsc = pctIndex.get(stat) || [];
+  if (!arrAsc.length || !Number.isFinite(value)) return NaN;
+  const less = LESS_IS_BETTER.has(stat);
+  let l = 0, r = arrAsc.length;
+  while (l < r) { const m = (l + r) >> 1; if (arrAsc[m] < value) l = m + 1; else r = m; }
+  const lo = l; l = 0; r = arrAsc.length;
+  while (l < r) { const m = (l + r) >> 1; if (arrAsc[m] <= value) l = m + 1; else r = m; }
   const hi = l; const midrank = (lo + hi) / 2;
-  let pct = (midrank / N) * 100; if (lessIs_BETTER.has?.(0)){} // noop to prevent bundlers from stripping set
-  if (LESS_IS_BETTER.has(arrAsc.statName)){} // no-op
+  let pct = (midrank / arrAsc.length) * 100;
+  if (less) pct = 100 - pct;
   return clamp100(pct);
 }
 
-/* ===================== Big-metric families (for estimate) ===================== */
+/* ===================== Role scoring ===================== */
+function roleScoreFor(row, roleName, pctIndex) {
+  const weights = typeof roleName === "string" ? ROLE_WEIGHTS[roleName] : (roleName?.weights||null);
+  if (!weights) return 0;
+  let sumW = 0, sum = 0;
+  for (const [stat, w] of Object.entries(weights)) {
+    const v = numCell(row, stat);
+    const pct = percentileFor(pctIndex, stat, v);
+    if (Number.isFinite(pct)) { sum += pct * w; sumW += w; }
+  }
+  return sumW > 0 ? sum / sumW : 0;
+}
+function bestNearRole(row, pctIndex) {
+  const tokens = expandFMPositions(getCell(row, "Pos"));
+  let best = null, bestScore = -1;
+  for (const role of Object.keys(ROLE_BOOK)) {
+    const baseline = ROLE_BASELINES[role] || [];
+    if (!sharesAny(tokens, baseline)) continue;
+    const sc = roleScoreFor(row, role, pctIndex);
+    if (sc > bestScore) { bestScore = sc; best = role; }
+  }
+  return { role: best, score: clamp100(bestScore) };
+}
+
+/* ===================== Big-metric families ===================== */
 const BIG_METRICS = {
   GK: ["Expected Goals Prevented/90","Save Ratio","Saves Held","Conceded/90"],
   DF: ["Tackles/90","Interceptions/90","Blocks/90","Shots Blocked/90","Clearances/90","Header Win Rate"],
@@ -509,7 +652,212 @@ const famFromTokens = (toks=[]) => {
   return "MF";
 };
 
-/* ===================== Tooltips + charts ===================== */
+/* ============== Expanded League grouping with 'growth' + explicit downgrades ===
+   Order (best ➜ worst): elite → strong → solid → growth → develop
+   Explicit DOWNGRADE list forces tiny European top tiers into 'develop'.
+=============================================================================== */
+const ESC = (s)=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+function makeUnion(list){ return new RegExp("\\b(" + list.map(ESC).join("|") + ")\\b","i"); }
+
+const GROUP_PATTERNS = {
+  elite: [
+    "Premier League","LALIGA EA SPORTS","LaLiga EA SPORTS","Bundesliga","Serie A","Serie A TIM","Ligue 1 Uber Eats",
+    "Eredivisie","Brasileirão Assaí Série A","Brasileirao Assai Serie A","Liga MX"
+  ],
+  strong: [
+    "Sky Bet Championship","Championship","2. Bundesliga","LaLiga Hypermotion","Serie BKT","Ligue 2 BKT","Keuken Kampioen Divisie",
+    "Liga Portugal Betclic","Jupiler Pro League","cinch Premiership","Admiral Bundesliga","Super League (Greece)","Super League Greece",
+    "Spor Toto Süper Lig","Süper Lig","3F Superliga","Eliteserien","Superligaen","PKO Ekstraklasa","Allsvenskan","Raiffeisen Super League",
+    "Fortuna liga","Fortuna Liga","OTP Bank Liga","SuperSport HNL","Mozzart Bet SuperLiga","Cyta Championship",
+    "MLS","Major League Soccer","Meiji Yasuda J1 League","J1 League","Hana 1Q K League 1","K League 1",
+    "QNB Stars League","Iran Pro League","ADNOC Pro League",
+    "Botola Pro 1","DSTV Premiership","Egyptian Premier League","Ligue Professionnelle 1"
+  ],
+  solid: [
+    "Sky Bet League One","Sky Bet League Two","Vanarama National League","Liga Portugal 2 SABSEG",
+    "3. Liga","OBOS-ligaen","PostNord-ligaen","Challenge League","Admiral 2. Liga","Challenger Pro League",
+    "Veikkausliiga","Prva Liga Telemach","I liga","Fortuna 1 Liga","II liga",
+    "Serie C NOW","Serie C","Championnat National","Segunda Federación","Primera Federación",
+    "Eerste Divisie","Liga 2 BKT","Liga Profesional de Fútbol","Liga Profesional de Futbol",
+    "Liga BetPlay Dimayor","Primera División (Uruguay)","Primera División (Paraguay)","Primera División (Chile)",
+    "Campeonato AFP PlanVital","Liga Promerica","Liga Panameña de Fútbol","New Zealand National League"
+  ],
+  growth: [
+    "USL Championship","Canadian Premier League","Liga BBVA Expansión MX","Expansion MX",
+    "Chinese Super League","Ping An Chinese Football Association Super League",
+    "Thai League 1","V.League 1","Vietnam V League 1","A-League","Isuzu UTE A-League",
+    "K League 2","J2 League","Meiji Yasuda J2 League",
+    "Jordan Pro League","Kuwaiti Premier League","Bahrain Premier League","Uzbekistan Superliga","Lebanese Premier League",
+    "Malaysia Super League","Astro Liga Super Malaysia",
+    "Ligue 1 (Algeria)","Liga 1 Mobilis","Nigeria Professional Football League","NPFL",
+    "Vodacom Tanzania Premier League","Zambia Super League","MTN/FAZ Super Division","Ghana Premier League"
+  ],
+  develop: [
+    "National League North","National League South","Regionalliga","Segunda Federación RFEF","Tercera Federación",
+    "Serie D","Primera C/Torneo Argentino","Primera B Metropolitana","Torneo Federal A",
+    "Primera B Nacional (Paraguay)","Primera División B (Paraguay)","Primera División B (Chile)","Segunda División (Chile)",
+    "USL League One","USL League Two","MLS Next Pro","NISA",
+    "Roshn Saudi League","Saudi Pro League","Roshin Saudi League","Roshn Saudi Pro League",
+    "Qatar Second Division","Oman Professional League","Iraq Stars League","Turkmenistan Ýokary Liga","Turkmenistan Yokary Liga",
+    "Philippines Football League","Kyrgyz Premier League","Afghan Premier League","Pakistan Premier League","Sri Lanka Super League",
+    "Bangladesh Premier League","Hong Kong First Division League","Hong Kong Premier League","J3 League","K League 3",
+    "Liga 2 Indonesia","JD Cymru North","JD Cymru South"
+  ]
+};
+
+// Force the smallest European top tiers to DEVELOP (explicit)
+const DOWNGRADE_TO_DEVELOP = makeUnion([
+  "Gibraltar Football League","Gibraltar National League",
+  "Betri deildin","Betri deildin menn","Faroe",
+  "BGL Ligue","Luxembourg National Division",
+  "NIFL Premiership","Sports Direct Premiership",
+  "JD Cymru Premier","Cymru Premier","Welsh Premier",
+  "A Lyga","Virsliga","Optibet Virsliga","Optibet A lyga",
+  "Abissnet Superiore",             // Albania
+  "Meridianbet 1.CFL","Prva crnogorska liga", // Montenegro
+  "Prva Makedonska Fudbalska Liga", // North Macedonia
+  "Crystalbet Erovnuli Liga","Erovnuli Liga", // Georgia
+  "Maltese Premier League","Campionato Sammarinese","Andorran Primera Divisió","Primera Divisió" // Malta, San Marino, Andorra
+]);
+
+const LMAP = Object.entries(GROUP_PATTERNS).map(([g,list])=>({ g, re: makeUnion(list) }));
+
+function leagueGroupOf(txt){
+  const s=String(txt||"");
+  if (DOWNGRADE_TO_DEVELOP.test(s)) return "develop";       // explicit small top tiers down
+  if (/saudi|roshn/i.test(s)) return "develop";              // explicit override: Saudi
+  for(const {re,g} of LMAP){ if(re.test(s)) return g; }
+  // Heuristics
+  if(/expansi[oó]n mx|usl|canadian premier|j2|k league 2|china|thai|v\.?league|malaysia|uzbek|lebanon|tanzania|zambia/i.test(s))
+    return "growth";
+  if(/premier|first div|1st division|pro liga|liga 1|liga i|championship/i.test(s)) return "solid";
+  if(/second|2nd|liga 2|division 2|liga ii|league two/i.test(s)) return "develop";
+  return "solid";
+}
+
+/* ============== Value & Wage config (scaled up wages + floors) =============== */
+/* ============== Value & Wage config (scaled + elite floors + rank boosts) =============== */
+/* ============== Value & Wage config (scaled + elite floors + rank boosts) =============== */
+const DEFAULT_VALUE_CONFIG = {
+  // league weighting + base scales (millions)
+  leagueWeights: { elite:1.35, strong:1.00, solid:0.85, growth:0.75, develop:0.65 },
+  baseScales:    { elite:85.0, strong:15.0, solid:8.0,  growth:5.5,  develop:4.0 },
+
+  // score shaping - decrease power to boost high performers
+  scorePower: 0.88,
+
+  // minutes & age shaping (softer older drop for stars)
+  minMinutesRef: 1800,
+  minMinutesFloor: 0.55,
+  ageCurve: { 17:0.90, 20:0.97, 23:1.00, 26:1.00, 29:0.97, 31:0.94, 34:0.90, 38:0.84 },
+
+  // big-metric boost - increased for elite impact
+  bigMetricBoostTopPct: 88,
+  bigMetricBoostPerHit: 0.045,
+
+  // anchoring & buy price
+  buyDiscount: 0.95, // max fee we’d pay stays close to model value
+
+  // wages — higher per-£1m and stronger elite multiplier
+  wagePerM: 4800, // £/week per £1m true value
+  wageLeagueFactor: { elite:1.55, strong:1.25, solid:1.05, growth:0.95, develop:0.88 },
+  wageAgeBoost: { 18:0.92, 21:0.96, 24:1.00, 28:1.08, 31:1.12, 34:1.08 },
+  wageGroupFloor: { elite: 1200, strong: 700, solid: 300, growth: 160, develop: 100 }, // £/week
+  wageMinAbsolute: 100,
+  wageMaxMult: 1.60,
+
+  // market uplift knobs so elite top scorers don’t look cheap
+  topRankPremiumMax: 0.85,                       // up to +85% for #1 in role baseline (scaled by rank share)
+  eliteFwPremium: 0.40,                          // extra +40% if elite tier & FW family
+  eliteTopFloorM: { FW: 120, MF: 90, DF: 70, GK: 50 }, // much higher floors (in £m) if elite & bestScore≥90
+  eliteTopAgeFloor: 0.96,                        // minimum age factor for elite top scorers (prevents heavy age penalty)
+  wageRespectCurrentMult: 1.10                   // never cap below ~110% of current
+};
+
+
+/* ============== Value & Wage model ========================================== */
+function interpAge(age, curve) {
+  if (!Number.isFinite(age)) return 1;
+  const pts = Object.entries(curve).map(([k,v])=>[+k, v]).sort((a,b)=>a[0]-b[0]);
+  if (!pts.length) return 1;
+  if (age <= pts[0][0]) return pts[0][1];
+  if (age >= pts[pts.length-1][0]) return pts[pts.length-1][1];
+  for (let i=1;i<pts.length;i++){
+    const [x1,y1] = pts[i-1], [x2,y2] = pts[i];
+    if (age >= x1 && age <= x2){
+      const t = (age - x1) / (x2 - x1);
+      return y1 + t*(y2 - y1);
+    }
+  }
+  return 1;
+}
+function minutesTrust(mins, ref, floor) {
+  if (!Number.isFinite(mins)) return floor;
+  if (mins <= 0) return floor;
+  const t = Math.sqrt(Math.min(mins, ref)) / Math.sqrt(ref);
+  return Math.max(floor, Math.min(1, t));
+}
+
+function trueValueOf(row, pctIndex, cfg = DEFAULT_VALUE_CONFIG) {
+  const age = numCell(row, "Age");
+  const mins = numCell(row, "Minutes");
+  const league = String(getCell(row, "League") || "");
+  const group = leagueGroupOf(league);
+
+  // DEFENSIVE: handle partial cfg blobs
+  const lw = (cfg.leagueWeights && cfg.leagueWeights[group]) ?? 0.65;
+  const scaleM = (cfg.baseScales && cfg.baseScales[group]) ?? 3.0;
+
+  const { role, score } = bestNearRole(row, pctIndex);
+  const scoreAdj = Math.pow((score || 0) / 100, cfg.scorePower ?? 1.1);
+
+  const fam = famFromTokens(expandFMPositions(getCell(row, "Pos")));
+  const famStats = BIG_METRICS[fam] || [];
+  let hits = 0;
+  for (const st of famStats) {
+    const v = numCell(row, st);
+    const pct = percentileFor(pctIndex, st, v);
+    if (pct >= (cfg.bigMetricBoostTopPct ?? 90)) hits++;
+  }
+  const bigBoost = 1 + hits * (cfg.bigMetricBoostPerHit ?? 0.025);
+
+  const mt = minutesTrust(mins, cfg.minMinutesRef ?? 1800, cfg.minMinutesFloor ?? 0.55);
+  const am = interpAge(age, cfg.ageCurve || { 17:0.9, 23:1, 29:0.96, 34:0.86 });
+
+  const baseM = scaleM * scoreAdj * lw * mt * am * bigBoost;
+
+  // do not anchor to reported transfer value by default; use model baseM
+  return { valueM: baseM, bestRole: role, bestScore: score, group };
+}
+function buyAtOf(row, pctIndex, cfg = DEFAULT_VALUE_CONFIG) {
+  const { valueM } = trueValueOf(row, pctIndex, cfg);
+  return valueM * (cfg.buyDiscount ?? 0.72);
+}
+function weeklyWageOf(row, pctIndex, cfg = DEFAULT_VALUE_CONFIG) {
+  const age = numCell(row, "Age");
+  const { valueM, group } = trueValueOf(row, pctIndex, cfg);
+  const lfac = (cfg.wageLeagueFactor && cfg.wageLeagueFactor[group]) ?? 0.9;
+  // piecewise linear age boost
+  const ageBoost = (()=>{
+    const pts = Object.entries(cfg.wageAgeBoost || {}).map(([k,v])=>[+k, v]).sort((a,b)=>a[0]-b[0]);
+    if (!Number.isFinite(age) || !pts.length) return 1;
+    if (age <= pts[0][0]) return pts[0][1];
+    if (age >= pts[pts.length-1][0]) return pts[pts.length-1][1];
+    for (let i=1;i<pts.length;i++){
+      const [x1,y1] = pts[i-1], [x2,y2] = pts[i];
+      if (age >= x1 && age <= x2) return y1 + (y2-y1) * ((age-x1)/(x2-x1));
+    }
+    return 1;
+  })();
+  const raw = (cfg.wagePerM ?? 4200) * valueM * lfac * ageBoost; // £/week
+  const floor = Math.max(cfg.wageMinAbsolute || 0, (cfg.wageGroupFloor && cfg.wageGroupFloor[group]) || 0);
+  return Math.max(floor, raw);
+}
+function weeklyWageMaxOf(row, pctIndex, cfg = DEFAULT_VALUE_CONFIG) {
+  return weeklyWageOf(row, pctIndex, cfg) * (cfg.wageMaxMult || 1.35);
+}
+
+/* ===================== Tooltip util ===================== */
 function attachTooltip(hostEl) {
   const tip = document.createElement("div");
   tip.className = "d3tip";
@@ -545,7 +893,6 @@ function attachTooltip(hostEl) {
   function destroy(){ tip.remove(); }
   return { show, hide, pin, unpin, destroy };
 }
-
 function useResizeObserver(ref) {
   const [rect, setRect] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -558,71 +905,300 @@ function useResizeObserver(ref) {
   return rect;
 }
 
+/* ===================== Charts ===================== */
+
+/* ============== Pizza Chart Component (FastAPI) =============== */
+const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex }) => {
+  const [pizzaImageSrc, setPizzaImageSrc] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!playerName || !playerData || !roleStats || roleStats.length === 0) return;
+
+    const generatePizza = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        // Prepare the data for the API
+        const stats = {};
+        const percentiles = {};
+        const statLabels = [];
+
+        roleStats.forEach(stat => {
+          const raw = numCell(playerData, stat);
+          const pct = percentileFor(pctIndex, stat, raw);
+          
+          stats[stat] = raw;
+          percentiles[stat] = pct;
+          statLabels.push(stat);
+        });
+
+        const requestData = {
+          player: {
+            name: playerName,
+            club: getCell(playerData, "Club") || "",
+            position: getCell(playerData, "Pos") || "",
+            age: numCell(playerData, "Age") || null,
+            minutes: numCell(playerData, "Minutes") || null,
+            appearances: numCell(playerData, "Appearances") || null,
+            league: getCell(playerData, "League") || "",
+            stats: stats,
+            percentiles: percentiles,
+            stat_labels: statLabels
+          },
+          title: `vs ${compScope}`,
+          light_theme: true
+        };
+
+        // Call FastAPI service
+        const response = await fetch('http://localhost:8000/pizza/base64', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestData)
+        });
+
+        if (!response.ok) {
+          throw new Error(`API request failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        setPizzaImageSrc(result.image);
+      } catch (err) {
+        console.error('Pizza chart generation failed:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    generatePizza();
+  }, [playerName, playerData, roleStats, compScope, pctIndex]);
+
+  if (loading) {
+    return (
+      <div style={{
+        width: "100%", 
+        height: "450px", 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "center",
+        color: "var(--muted)"
+      }}>
+        Generating pizza chart...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        width: "100%", 
+        height: "450px", 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "center",
+        color: "var(--error)",
+        fontSize: "12px",
+        textAlign: "center"
+      }}>
+        Failed to generate pizza chart<br/>
+        <small>{error}</small>
+      </div>
+    );
+  }
+
+  if (!pizzaImageSrc) {
+    return (
+      <div style={{
+        width: "100%", 
+        height: "450px", 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "center",
+        color: "var(--muted)"
+      }}>
+        No pizza chart available
+      </div>
+    );
+  }
+
+  return (
+    <div style={{width: "100%", height: "450px", display: "flex", justifyContent: "center", alignItems: "center"}}>
+      <img 
+        src={pizzaImageSrc} 
+        alt={`Pizza chart for ${playerName}`}
+        style={{
+          maxWidth: "100%",
+          maxHeight: "100%",
+          objectFit: "contain"
+        }}
+      />
+    </div>
+  );
+};
+
 function Radar({ series }) {
-  const wrapRef = useRef(null); const svgRef = useRef(null); const tipRef = useRef(null);
+  const wrapRef = useRef(null); 
+  const svgRef = useRef(null); 
+  const tipRef = useRef(null);
   const { width } = useResizeObserver(wrapRef);
   const categories = series[0]?.slices?.map(s=>s.label) || [];
-  useEffect(()=>{ if(!wrapRef.current) return; tipRef.current?.destroy?.(); tipRef.current = attachTooltip(wrapRef.current); return ()=>tipRef.current?.destroy?.(); },[wrapRef]);
+  
+  useEffect(()=>{ 
+    if(!wrapRef.current) return; 
+    tipRef.current?.destroy?.(); 
+    tipRef.current = attachTooltip(wrapRef.current); 
+    return ()=>tipRef.current?.destroy?.(); 
+  },[wrapRef]);
+  
   useEffect(()=>{
     if (!categories.length) return;
-    const w = Math.max(900, width || 1280);
-    const h = Math.max(620, Math.min(860, w * 0.6));
-    const root = d3.select(svgRef.current).attr("viewBox", `0 0 ${w} ${h}`).attr("width", w).attr("height", h);
+    
+    // Bigger but still constrained dimensions
+    const containerW = width || 400;
+    const w = Math.min(containerW, 400);
+    const h = Math.min(w, 320);
+    
+    const root = d3.select(svgRef.current)
+      .attr("viewBox", `0 0 ${w} ${h}`)
+      .attr("width", "100%")
+      .attr("height", "100%")
+      .style("max-width", `${w}px`)
+      .style("max-height", `${h}px`);
+    
     root.selectAll("*").remove();
-    const scene = root.append("g");
-    const radius = Math.min(w, h) * 0.36;
-    const angle = d3.scaleLinear().domain([0, categories.length]).range([0, Math.PI * 2]);
-    const r = d3.scaleLinear().domain([0, 100]).range([0, radius]);
-    const g = scene.append("g").attr("transform", `translate(${w/2},${h/2})`);
-    [20,40,60,80,100].forEach(v=>{ g.append("circle").attr("r", r(v)).attr("fill","none").attr("stroke", "var(--axisInk)").attr("stroke-dasharray","2,4").attr("opacity",0.9); });
-    for (let i=0;i<categories.length;i++){ const a = angle(i);
-      g.append("line").attr("x1",0).attr("y1",0).attr("x2", Math.cos(a)*radius).attr("y2", Math.sin(a)*radius).attr("stroke","var(--axisInk)").attr("opacity",0.35);
-    }
-    categories.forEach((label,i)=>{ const a = angle(i); const x = Math.cos(a) * (radius + 14); const y = Math.sin(a) * (radius + 14);
-      const anchor = x > 10 ? "start" : x < -10 ? "end" : "middle";
-      g.append("text").attr("x", x).attr("y", y).attr("text-anchor", anchor).attr("dominant-baseline","middle").attr("fill","var(--axisInk)").style("font-size","12px").text(label);
+    
+    // Centered positioning with proper margins
+    const margin = 50;
+    const centerX = w / 2;
+    const centerY = h / 2;
+    const radius = Math.min(w, h) / 2 - margin;
+    
+    const g = root.append("g").attr("transform", `translate(${centerX},${centerY})`);
+    
+    // Grid circles - smaller and cleaner
+    [20, 40, 60, 80, 100].forEach(v => {
+      g.append("circle")
+        .attr("r", radius * (v / 100))
+        .attr("fill", "none")
+        .attr("stroke", "var(--axisInk)")
+        .attr("stroke-dasharray", "1,2")
+        .attr("opacity", 0.3);
     });
+    
+    // Angle calculation
+    const angle = d3.scaleLinear()
+      .domain([0, categories.length])
+      .range([0, Math.PI * 2]);
+    
+    // Grid lines
+    for (let i = 0; i < categories.length; i++) {
+      const a = angle(i) - Math.PI / 2; // Start from top
+      g.append("line")
+        .attr("x1", 0)
+        .attr("y1", 0)
+        .attr("x2", Math.cos(a) * radius)
+        .attr("y2", Math.sin(a) * radius)
+        .attr("stroke", "var(--axisInk)")
+        .attr("opacity", 0.2);
+    }
+    
+    // Labels - positioned better
+    categories.forEach((label, i) => {
+      const a = angle(i) - Math.PI / 2;
+      const labelRadius = radius + 20;
+      const x = Math.cos(a) * labelRadius;
+      const y = Math.sin(a) * labelRadius;
+      
+      const anchor = x > 5 ? "start" : x < -5 ? "end" : "middle";
+      
+      g.append("text")
+        .attr("x", x)
+        .attr("y", y)
+        .attr("text-anchor", anchor)
+        .attr("dominant-baseline", "middle")
+        .attr("fill", "var(--axisInk)")
+        .style("font-size", "11px")
+        .style("font-weight", "600")
+        .text(label.length > 15 ? label.substring(0, 15) + "..." : label);
+    });
+    
     const tip = tipRef.current;
-    series.forEach((s, idx)=>{ const color = s.color || (idx===0 ? "var(--accent)" : "var(--accent2)");
-      const pts = s.slices.map((slc,i)=>[ Math.cos(angle(i)) * r(clamp100(slc.pct||0)), Math.sin(angle(i)) * r(clamp100(slc.pct||0)) ]);
-      const pathD = d3.line().curve(d3.curveCardinalClosed.tension(0.6))(pts);
-      g.append("path").attr("d", pathD).attr("fill", color).attr("opacity", 0.12);
-      g.append("path").attr("d", pathD).attr("stroke", color).attr("stroke-width", 1.8).attr("fill","none");
-      s.slices.forEach((slc, i)=>{ const x = pts[i][0], y = pts[i][1];
+    
+    // Draw series
+    series.forEach((s, idx) => {
+      const color = s.color || "var(--accent)";
+      
+      // Calculate points
+      const pts = s.slices.map((slc, i) => {
+        const a = angle(i) - Math.PI / 2;
+        const r = radius * (clamp100(slc.pct || 0) / 100);
+        return [Math.cos(a) * r, Math.sin(a) * r];
+      });
+      
+      // Draw filled area
+      const pathD = d3.line().curve(d3.curveCardinalClosed.tension(0.5))(pts);
+      g.append("path")
+        .attr("d", pathD)
+        .attr("fill", color)
+        .attr("opacity", 0.15);
+      
+      // Draw outline
+      g.append("path")
+        .attr("d", pathD)
+        .attr("stroke", color)
+        .attr("stroke-width", 2)
+        .attr("fill", "none");
+      
+      // Draw points with tooltips
+      s.slices.forEach((slc, i) => {
+        const [x, y] = pts[i];
+        
         const html = `
           <div class="t-card">
-            <div class="t-title">${s.name} — ${slc.label}<span class="t-badge">${decileBadge(clamp100(slc.pct||0))}</span></div>
-            <div class="t-row"><span>Percentile</span><b>${tf(slc.pct,2)}%</b></div>
-            ${Number.isFinite(slc.raw) ? `<div class="t-row"><span>Role value</span><b>${tf(slc.raw,2)}</b></div>` : ``}
+            <div class="t-title">${slc.label}</div>
+            <div class="t-row"><span>Percentile</span><b>${tf(slc.pct, 1)}%</b></div>
+            ${Number.isFinite(slc.raw) ? `<div class="t-row"><span>Raw</span><b>${tf(slc.raw, 2)}</b></div>` : ""}
           </div>`;
-        g.append("circle").attr("cx", x).attr("cy", y).attr("r", 5.2).attr("fill", color)
-          .attr("stroke", "#0b1220").attr("stroke-width",1.2)
-          .on("mousemove", (e)=> tip?.show(e, html))
-          .on("mouseleave", ()=> tip?.hide())
-          .on("click", (e)=> tip?.pin(e, html));
+        
+        g.append("circle")
+          .attr("cx", x)
+          .attr("cy", y)
+          .attr("r", 5)
+          .attr("fill", color)
+          .attr("stroke", "var(--bg)")
+          .attr("stroke-width", 2)
+          .style("cursor", "pointer")
+          .on("mousemove", (e) => tip?.show(e, html))
+          .on("mouseleave", () => tip?.hide());
       });
     });
-    const bbox = scene.node().getBBox();
-    const dx = w/2 - (bbox.x + bbox.width/2);
-    const dy = h/2 - (bbox.y + bbox.height/2);
-    const desiredBias = Math.min(w * 0.10, 160);
-    const leftEdgeAfterCenter = bbox.x + dx;
-    const safeBias = Math.min(desiredBias, Math.max(0, leftEdgeAfterCenter - 8));
-    scene.attr("transform", `translate(${dx - safeBias},${dy})`);
-  },[series, width]);
-  return <div className="chartWrap" ref={wrapRef}><svg ref={svgRef}/></div>;
+    
+  }, [series, width, categories]);
+  
+  return (
+    <div className="chartWrap" ref={wrapRef} style={{width: "100%", height: "100%"}}>
+      <svg ref={svgRef} style={{display: "block"}} />
+    </div>
+  );
 }
+
+
 
 function HBar({ items, titleFmt=(v)=>`${v}%`, valueMax=100 }) {
   const wrapRef = useRef(null); const svgRef = useRef(null); const tipRef = useRef(null);
   const { width } = useResizeObserver(wrapRef);
   useEffect(()=>{ if(!wrapRef.current) return; tipRef.current?.destroy?.(); tipRef.current = attachTooltip(wrapRef.current); return ()=>tipRef.current?.destroy?.(); },[wrapRef]);
   useEffect(()=>{
-    const rowH = 34;
+    const rowH = 40;
     const data = Array.isArray(items) ? items : [];
-    const h = Math.max(280, 60 + rowH * data.length);
-    const w = Math.max(900, width || 1280);
-    const margin = { top: 32, right: 30, bottom: 42, left: 320 };
+    const h = Math.max(280, 54 + rowH * data.length);
+    const w = Math.max(900, width || 1200);
+    const margin = { top: 30, right: 30, bottom: 44, left: 220 };
     const root = d3.select(svgRef.current).attr("viewBox", `0 0 ${w} ${h}`).attr("width", w).attr("height", h);
     root.selectAll("*").remove();
     const g = root.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
@@ -630,803 +1206,916 @@ function HBar({ items, titleFmt=(v)=>`${v}%`, valueMax=100 }) {
     const innerH = h - margin.top - margin.bottom;
     const y = d3.scaleBand().domain(data.map(d=>d.label)).range([0, innerH]).padding(0.22);
     const x = d3.scaleLinear().domain([0, valueMax]).range([0, innerW]);
-    g.append("g").call(d3.axisLeft(y).tickSize(0)).selectAll("text").style("font-size","12px").attr("fill","var(--axisInk)");
-    g.append("g").attr("transform", `translate(0,${innerH})`).call(d3.axisBottom(x).ticks(6).tickFormat((d)=>titleFmt(d))).selectAll("text").attr("fill","var(--axisInk)");
+    g.append("g").call(d3.axisLeft(y).tickSize(0)).selectAll("text").style("font-size","14px").attr("fill","var(--axisInk)");
+    g.append("g").attr("transform", `translate(0,${innerH})`).call(d3.axisBottom(x).ticks(6).tickFormat((d)=>titleFmt(d))).selectAll("text").style("font-size","13px").attr("fill","var(--axisInk)");
     const tip = tipRef.current;
     const bars = g.append("g").selectAll("rect").data(data).enter().append("rect")
       .attr("x", 0).attr("y", d=>y(d.label)).attr("height", y.bandwidth()).attr("width", 0).attr("fill", "var(--accent)")
       .on("mousemove",(e,d)=> tip?.show(e, `<div class="t-card"><div class="t-title">${d.label}${d.extra?` — ${d.extra}`:""}</div><div class="t-row"><span>Value</span><b>${titleFmt(d.value)}</b></div></div>`))
       .on("mouseleave",()=>tip?.hide());
-    bars.transition().duration(700).attr("width", d=>x(d.value)).attr("rx", 9);
+    bars.transition().duration(650).attr("width", d=>x(d.value)).attr("rx", 9);
     g.selectAll("text.value").data(data).enter().append("text")
       .attr("class","value").attr("x", d=>x(d.value)+8).attr("y", d=>y(d.label)+y.bandwidth()/2)
-      .attr("text-anchor","start").attr("dominant-baseline","middle").attr("fill","var(--ink)").style("font-size","12px")
+      .attr("text-anchor","start").attr("dominant-baseline","middle").attr("fill","var(--ink)").style("font-size","14px")
       .text(d=>titleFmt(d.value));
   },[items, width, valueMax, titleFmt]);
   return <div className="chartWrap" ref={wrapRef}><svg ref={svgRef}/></div>;
 }
 
-function Scatter({ points, xLabel, yLabel, q="", highlightName="", colorByPos=false }) {
+
+
+function Scatter({ points, xLabel, yLabel, q="", highlightName="", colorByPos=false, onPick, isProfileMode=false }) {
   const wrapRef = useRef(null); const svgRef = useRef(null); const tipRef = useRef(null);
   const { width } = useResizeObserver(wrapRef);
   useEffect(()=>{ if(!wrapRef.current) return; tipRef.current?.destroy?.(); tipRef.current = attachTooltip(wrapRef.current); return ()=>tipRef.current?.destroy?.(); },[wrapRef]);
   useEffect(()=>{
     const data = Array.isArray(points) ? points : [];
     if (!data.length) return;
-    const w = Math.max(980, width || 1340);
-    const h = Math.max(620, Math.min(860, w * 0.6));
-    const margin = { top: 34, right: 30, bottom: 58, left: 70 };
+    const w = Math.max(800, width || 1200);
+    const h = Math.max(600, Math.min(750, w * 0.6));
+    const margin = { top: 60, right: 60, bottom: 100, left: 120 };
     const innerW = w - margin.left - margin.right;
     const innerH = h - margin.top - margin.bottom;
-    const root = d3.select(svgRef.current).attr("viewBox", `0 0 ${w} ${h}`).attr("width", w).attr("height", h);
+    const root = d3.select(svgRef.current).attr("viewBox", `0 0 ${w} ${h}`).attr("width", "100%").attr("height", "100%").style("max-width", `${w}px`).style("max-height", `${h}px`);
     root.selectAll("*").remove();
     const g = root.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
     const x = d3.scaleLinear().domain(d3.extent(data, d=>d.x)).nice().range([0, innerW]);
     const y = d3.scaleLinear().domain(d3.extent(data, d=>d.y)).nice().range([innerH, 0]);
-    g.append("g").attr("transform", `translate(0,${innerH})`).call(d3.axisBottom(x)).selectAll("text").attr("fill", "var(--axisInk)");
-    g.append("g").call(d3.axisLeft(y)).selectAll("text").attr("fill", "var(--axisInk)");
+    g.append("g").attr("transform", `translate(0,${innerH})`).call(d3.axisBottom(x)).selectAll("text").style("font-size","13px").attr("fill", "var(--axisInk)");
+    g.append("g").call(d3.axisLeft(y)).selectAll("text").style("font-size","13px").attr("fill", "var(--axisInk)");
     const xMid = (x.domain()[0]+x.domain()[1])/2; const yMid = (y.domain()[0]+y.domain()[1])/2;
-    g.append("rect").attr("x", x(xMid)).attr("y", 0).attr("width", innerW-x(xMid)).attr("height", y(yMid)).attr("fill", "var(--quadFill)").attr("opacity",0.6);
-    g.append("rect").attr("x", 0).attr("y", yMid?y(yMid):innerH/2).attr("width", x(xMid)).attr("height", innerH-(yMid?y(yMid):innerH/2)).attr("fill", "var(--quadFill)").attr("opacity",0.6);
-    g.append("text").attr("x", innerW / 2).attr("y", innerH + 44).attr("text-anchor", "middle").attr("fill", "var(--axisInk)").text(xLabel);
-    g.append("text").attr("transform", "rotate(-90)").attr("x", -innerH / 2).attr("y", -48).attr("text-anchor", "middle").attr("fill", "var(--axisInk)").text(yLabel);
+    g.append("rect").attr("x", x(xMid)).attr("y", 0).attr("width, height", null)
+      .attr("width", innerW-x(xMid)).attr("height", y(yMid)).attr("fill", "var(--quadFill)").attr("opacity",0.6);
+    g.append("rect").attr("x", 0).attr("y", yMid?y(yMid):innerH/2)
+      .attr("width", x(xMid)).attr("height", innerH-(yMid?y(yMid):innerH/2)).attr("fill", "var(--quadFill)").attr("opacity",0.6);
+    g.append("text").attr("x", innerW / 2).attr("y", innerH + 70).attr("text-anchor", "middle").attr("fill", "var(--axisInk)").style("font-size","14px").text(xLabel);
+    g.append("text").attr("transform", "rotate(-90)").attr("x", -innerH / 2).attr("y", -80).attr("text-anchor", "middle").attr("fill", "var(--axisInk)").style("font-size","14px").text(yLabel);
     const tip = tipRef.current; const query = q.trim().toLowerCase();
-    const circles = g.append("g").selectAll("circle").data(data).enter().append("circle")
+    g.append("g").selectAll("circle").data(data).enter().append("circle")
       .attr("cx", d=>x(d.x)).attr("cy", d=>y(d.y))
-      .attr("r", d => { const hit = query && (String(d.name||"").toLowerCase().includes(query) || String(d.club||"").toLowerCase().includes(query) || String(d.pos||"").toLowerCase().includes(query)); const isMe = highlightName && d.name===highlightName; return hit||isMe ? 6.5 : 4.6; })
-      .attr("fill", d => {
-        if (colorByPos && d.pos && POS_COLORS[d.pos]) return POS_COLORS[d.pos];
+      .attr("r", d => {
         const hit = query && (String(d.name||"").toLowerCase().includes(query) || String(d.club||"").toLowerCase().includes(query) || String(d.pos||"").toLowerCase().includes(query));
-        return hit ? "var(--accent2)" : "var(--accent)";
+        const isMe = highlightName && d.name===highlightName;
+        return hit||isMe ? 7.0 : 5.0;
       })
-      .attr("opacity", d => { const hit = query && (String(d.name||"").toLowerCase().includes(query) || String(d.club||"").toLowerCase().includes(query) || String(d.pos||"").toLowerCase().includes(query)); const isMe = highlightName && d.name===highlightName; return hit||isMe ? 1 : (query ? 0.35 : 0.95); })
-      .on("mousemove",(e,d)=>{ tip?.show(e, `<div class="t-card">
+      .attr("fill", d => {
+        const isHighlighted = highlightName && d.name === highlightName;
+        return isHighlighted ? "#FFD700" : "#ff4040";
+      })
+      .attr("opacity", d => {
+        const isHighlighted = highlightName && d.name === highlightName;
+        return isHighlighted ? 1 : 0.7;
+      })
+      .style("cursor", "pointer")
+      .attr("class", "player-dot")
+      .on("mousemove",(e,d)=> tip?.show(e, `<div class="t-card">
           <div class="t-title">${d.name} • ${d.club||"?"}</div>
           ${d.pos?`<div class="t-row"><span>Pos</span><b>${d.pos}</b></div>`:""}
           <div class="t-row"><span>${xLabel}</span><b>${tf(d.x,2)}</b></div>
           <div class="t-row"><span>${yLabel}</span><b>${tf(d.y,2)}</b></div>
-        </div>`); })
-      .on("mouseleave",()=>tip?.hide());
-  },[points, width, xLabel, yLabel, q, highlightName, colorByPos]);
+          <div style="margin-top:8px; font-size:12px; color:var(--muted)">Click to view profile</div>
+        </div>`))
+      .on("mouseleave",()=>tip?.hide())
+      .on("click", (e,d) => {
+        e.preventDefault();
+        onPick && onPick(d);
+        d3.selectAll(".player-dot").attr("fill", d => {
+          const isHighlighted = highlightName && d.name === highlightName;
+          return isHighlighted ? "#FFD700" : "#ff4040";
+        });
+      });
+  },[points, width, xLabel, yLabel, q, highlightName, colorByPos, onPick]);
   return <div className="chartWrap" ref={wrapRef}><svg ref={svgRef}/></div>;
 }
-// src/App.jsx — PART 2/2
 
-const MODES = [
-  "Player Profile",
-  "Radar",
-  "Percentiles",
-  "Role Matrix",
-  "Stat Scatter",
-  "Player Finder",
-  "Best Roles",
-  "Role Leaders",
-  "Stat Leaders"
-];
 
-export default function App(){
-  const [themeName, setThemeName] = useState("sleek");
-  const theme = THEMES[themeName];
 
-  // data
-  const [rows, setRows] = useState([]);
-  const [columns, setColumns] = useState([]);
-
-  // UI
-  const [mode, setMode] = useState("Player Profile");
-  const [baseline, setBaseline] = useState("role_group"); // role_group | sidebar | global
-  const [posCohort, setPosCohort] = useState([...POS14]);
-  const [minMinutes, setMinMinutes] = useState(900);
-  const [maxAge, setMaxAge] = useState(40);
-  const [search, setSearch] = useState("");
-
-  // selections
-  const [player, setPlayer] = useState("");
-  const [role, setRole] = useState("CM — Progresser");
-  const [roleX, setRoleX] = useState("CM — Progresser");
-  const [roleY, setRoleY] = useState("ST — Poacher");
-
-  const [scatterQ, setScatterQ] = useState("");
-
-  /* ----------- Loaders ----------- */
-  const onFile = async (file) => {
-    if (!file) return;
-    let recs = [];
-    if (/\.(html?|HTM)$/i.test(file.name)) recs = await parseHtmlTable(file);
-    else if (/\.csv$/i.test(file.name)) {
-      const text = await file.text();
-      const parsed = Papa.parse(text, { header: true, dynamicTyping: false, skipEmptyLines: true });
-      recs = parsed.data || [];
-    } else { alert("Please upload HTML or CSV."); return; }
-
-    const normalized = normalizeHeadersRowObjects(recs).map(r => {
-      const out = { ...r };
-      const pos = out.Pos || out.Position || "";
-      out.__pos_tokens = expandFMPositions(pos);
-      return out;
-    });
-
-    setRows(normalized);
-    setColumns(Object.keys(normalized[0] || {}));
-    if (normalized.length) {
-      const nameColGuess = findColFuzzy(Object.keys(normalized[0]), ["Name","Player","Footballer"]) || "Name";
-      setPlayer(String(normalized[0][nameColGuess] || ""));
-    }
-  };
-
-  /* ----------- Column resolution ----------- */
-  const nameCol = useMemo(()=> findColFuzzy(columns, ["Name","Player","Footballer"]) || "Name", [columns]);
-  const posCol  = useMemo(()=> findColFuzzy(columns, ["Pos","Position"]) || "Pos", [columns]);
-  const minsCol = useMemo(()=> findColFuzzy(columns, ["Minutes","Mins","Min","Time Played","TimePlayed"]) || "Minutes", [columns]);
-  const ageCol  = useMemo(()=> findColFuzzy(columns, ["Age"]) || "Age", [columns]);
-  const clubCol = useMemo(()=> findColFuzzy(columns, ["Club","Squad","Team"]) || "Club", [columns]);
-  const divCol  = useMemo(()=> findColFuzzy(columns, ["League","Division","Competition"]) || "League", [columns]);
-  const actualValCol = useMemo(()=> findColFuzzy(columns, ["Transfer Value","Market Value","Value","Transfer Fee","Fee"]), [columns]);
-
-  /* ----------- Numeric columns present ----------- */
-  const numericCols = useMemo(()=>{
-    const colsSet = new Set(columns);
-    return Array.from(colsSet).filter(c => rows.some(r => Number.isFinite(numerify(r[c]))));
-  },[columns, rows]);
-
-  /* ----------- Pools react to Minutes & Age ----------- */
-  const rowsForPools = useMemo(()=>{
-    const mmin = minMinutes||0; const amax = maxAge||100;
-    return rows.filter(r => {
-      const m = numerify(r[minsCol]); const a = numerify(r[ageCol]);
-      const okM = Number.isFinite(m) ? m >= mmin : true;
-      const okA = Number.isFinite(a) ? a <= amax : true;
-      return okM && okA;
-    });
-  }, [rows, minsCol, ageCol, minMinutes, maxAge]);
-
-  /* ----------- Filtered (pos + search) ----------- */
-  const filtered = useMemo(()=>{
-    const allowed = posCohort.length ? posCohort : POS14;
-    return rowsForPools.filter(r => {
-      const toks = r.__pos_tokens || expandFMPositions(r[posCol] || "");
-      const okPos = sharesAny(toks, allowed);
-      const okSearch = search ? String(r[nameCol]||"").toLowerCase().includes(search.toLowerCase()) : true;
-      return okPos && okSearch;
-    });
-  }, [rowsForPools, posCohort, posCol, search, nameCol]);
-
-  const players = useMemo(()=> filtered.map(r => String(r[nameCol]||"")).filter(Boolean), [filtered, nameCol]);
-  useEffect(()=>{ if (players.length && !players.includes(player)) setPlayer(players[0] || ""); }, [players]); // eslint-disable-line
-
-  /* ----------- Percentile pools (recompute on Minutes/Age) ----------- */
-  const pre = useMemo(()=>{
-    const global = new Map();
-    numericCols.forEach(stat => {
-      const arr = rowsForPools.map(r => numerify(r[stat])).filter(Number.isFinite).sort((a,b)=>a-b);
-      global.set(stat, arr);
-    });
-    const groups = new Map();
-    const groupsDef = {
-      "GK":["GK"],
-      "DF":["D (R)","D (L)","D (C)","WB (R)","WB (L)"],
-      "MF":["DM","M (R)","M (L)","M (C)","AM (R)","AM (L)","AM (C)"],
-      "FW":["ST (C)"]
-    };
-    for (const [gName, allowed] of Object.entries(groupsDef)) {
-      const rs = rowsForPools.filter(r => sharesAny(r.__pos_tokens || expandFMPositions(r[posCol]||""), allowed));
-      const m = new Map();
-      numericCols.forEach(stat => {
-        const arr = rs.map(r => numerify(r[stat])).filter(Number.isFinite).sort((a,b)=>a-b);
-        m.set(stat, arr);
-      });
-      groups.set(gName, m);
-    }
-    return { global, groups };
-  },[rowsForPools, numericCols, posCol]);
-
-  /* ----------- Baselines & percentiles (robust) ----------- */
-  function roleFamily(roleName){
-    const s = (roleName||"").toLowerCase();
-    if (s.includes("gk")) return "GK";
-    if (/(cb|fb|wb|full|back|defender)/.test(s)) return "DF";
-    if (/(dm|cm|am|mid|mezzala|playmaker|carrilero|regista)/.test(s)) return "MF";
-    if (/(st|striker|forward|poacher|target|press)/.test(s)) return "FW";
-    return "MF";
-  }
-  function poolForStat(stat, roleName){
-    if (baseline === "global") return pre.global.get(stat) || [];
-    if (baseline === "sidebar") {
-      const rs = rowsForPools.filter(r => sharesAny(r.__pos_tokens || [], posCohort));
-      const arr = rs.map(r => numerify(r[stat])).filter(Number.isFinite).sort((a,b)=>a-b);
-      return arr.length ? arr : pre.global.get(stat) || [];
-    }
-    const g = roleFamily(roleName);
-    const arr = pre.groups.get(g)?.get(stat) || [];
-    return arr.length ? arr : (pre.global.get(stat) || []);
-  }
-  const safePercentileFromSorted = (v, arrAsc, lessIsBetter) => {
-    const N = arrAsc.length; const val = numerify(v);
-    if (!Number.isFinite(val) || !N) return NaN;
-    let l = 0, r = N;
-    while (l < r) { const m = (l + r) >> 1; if (arrAsc[m] < val) l = m + 1; else r = m; }
-    const lo = l; l = 0; r = N;
-    while (l < r) { const m = (l + r) >> 1; if (arrAsc[m] <= val) l = m + 1; else r = m; }
-    const hi = l; const midrank = (lo + hi) / 2;
-    let pct = (midrank / N) * 100;
-    if (lessIsBetter) pct = 100 - pct;
-    return clamp100(pct);
-  };
-  function pctStat(value, stat, roleName){
-    const pool = poolForStat(stat, roleName);
-    return safePercentileFromSorted(value, pool, LESS_IS_BETTER.has(stat));
-  }
-
-  /* ----------- Caches ----------- */
-  const scoreCacheRef = useRef(new Map());      // keyRow -> Map(role -> score)
-  const bestRoleCacheRef = useRef(new Map());   // keyRow -> {name, score}
-  const roleLeadersCacheRef = useRef(new Map()); // role -> [{name, score, row}]
-
-  const rowKey = (r) => `${r[nameCol]||"?"}__${r[clubCol]||"?"}`;
-
-  useEffect(()=>{
-    scoreCacheRef.current = new Map();
-    bestRoleCacheRef.current = new Map();
-    roleLeadersCacheRef.current = new Map();
-  }, [rowsForPools, numericCols, baseline, posCohort, minMinutes, maxAge]);
-
-  /* ----------- Role scoring ----------- */
-  function roleScoreForRaw(row, roleName) {
-    const weights = ROLE_WEIGHTS[roleName] || {};
-    const stats = Object.keys(weights).filter(s => numericCols.includes(s));
-    if (!stats.length) return 0;
-    let wsum = 0, acc = 0;
-    for (const s of stats) {
-      const pct = pctStat(row[s], s, roleName);
-      if (!Number.isFinite(pct)) continue;
-      const w = weights[s] || 1;
-      acc += pct * w; wsum += w;
-    }
-    return wsum ? clamp100(acc/wsum) : 0;
-  }
-  function roleScoreFor(row, roleName) {
-    const k = rowKey(row);
-    let m = scoreCacheRef.current.get(k);
-    if (!m) { m = new Map(); scoreCacheRef.current.set(k, m); }
-    if (m.has(roleName)) return m.get(roleName);
-    const s = roleScoreForRaw(row, roleName);
-    m.set(roleName, s);
-    return s;
-  }
-  function nearRolesForRow(row) {
-    const toks = row.__pos_tokens || expandFMPositions(row[posCol] || "");
-    return Object.keys(ROLE_STATS).filter(rn => sharesAny(toks, ROLE_BASELINES[rn] || []));
-  }
-  function bestNearRole(row) {
-    const k = rowKey(row);
-    const cached = bestRoleCacheRef.current.get(k);
-    if (cached) return cached;
-    const near = nearRolesForRow(row);
-    if (!near.length) { const res = { name:"Overall", score: 50 }; bestRoleCacheRef.current.set(k, res); return res; }
-    let best = { name: near[0], score: roleScoreFor(row, near[0]) };
-    for (const rn of near.slice(1)) {
-      const s = roleScoreFor(row, rn);
-      if (s > best.score) best = { name: rn, score: s };
-    }
-    bestRoleCacheRef.current.set(k, best);
-    return best;
-  }
-
-  /* ----------- League grouping + value baselines ----------- */
-  function leagueGroupOf(txt) {
-    const s = String(txt || "").toLowerCase();
-    if (/(premier league|la liga(?!\s*2)|serie a(?!\s*b)|bundesliga(?!\s*2)|ligue 1\b)/.test(s)) return "elite";
-    if (/(eredivisie|primeira liga|liga portugal|mls\b|jupiler|pro league|scottish prem|championship\b)/.test(s)) return "strong";
-    if (/(süper lig|super lig|liga mx|brasileir|argentin)/.test(s)) return "solid";
-    if (/(serie\s*b|ligue\s*2|2\.bundesliga|la\s*liga\s*2|segunda|segunda división|segunda division|league one|league two)/.test(s)) return "develop";
-    return "solid";
-  }
-  function secondTierFactor(leagueTxt) {
-    const s = String(leagueTxt || "").toLowerCase();
-    if (/(serie\s*b|ligue\s*2|2\.bundesliga|la\s*liga\s*2|segunda|segunda división|segunda division)/.test(s)) return 0.50;
-    if (/championship\b/.test(s)) return 0.65;
-    return 1.0;
-  }
-  const baseByGroup = useMemo(()=>{
-    const store = new Map([["elite",[]],["strong",[]],["solid",[]],["develop",[]]]);
-    if (actualValCol) {
-      rowsForPools.forEach(r => {
-        const grp = leagueGroupOf(r[divCol]);
-        const rng = parseMoneyRange(r[actualValCol]);
-        if (isFinite(rng.mid) && rng.mid>0) store.get(grp).push(rng.mid);
-      });
-    }
-    const out = new Map();
-    const allVals = Array.from(store.values()).flat();
-    const globalAvg = allVals.length ? allVals.reduce((a,b)=>a+b,0)/allVals.length : 900_000;
-    const fallback = { elite: globalAvg * 1.6, strong: globalAvg * 1.15, solid: globalAvg * 0.85, develop: globalAvg * 0.45 };
-    for (const [k, arr] of store.entries()) {
-      const avg = arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : fallback[k];
-      out.set(k, avg);
-    }
-    return out;
-  }, [rowsForPools, actualValCol, divCol]);
-
-  /* ----------- Values (scaled back) ----------- */
-  function actualValueOf(row) {
-    if (!actualValCol) return NaN;
-    const rng = parseMoneyRange(row[actualValCol]);
-    return isFinite(rng.mid) ? rng.mid : (isFinite(rng.upper)?rng.upper:rng.lower);
-  }
-  function ageMult(age) {
-    const a = numerify(age);
-    if (!Number.isFinite(a)) return 1.0;
-    if (a <= 19) return 1.40;
-    if (a <= 22) return 1.25;
-    if (a <= 26) return 1.15;
-    if (a <= 29) return 1.00;
-    if (a <= 32) return 0.85;
-    return 0.70;
-  }
-  function minutesMult(mins) {
-    const m = numerify(mins) || 0;
-    return 0.80 + Math.min(1, m/2700) * 0.60; // 0.80 .. 1.40
-  }
-  function posMult(tokens=[]) {
-    const t = tokens || [];
-    if (t.includes("ST (C)")) return 1.25;
-    if (t.includes("AM (C)")) return 1.15;
-    if (t.includes("AM (R)") || t.includes("AM (L)")) return 1.10;
-    if (t.includes("DM")) return 1.08;
-    if (t.includes("WB (R)") || t.includes("WB (L)")) return 1.05;
-    if (t.includes("GK")) return 0.90;
-    return 1.00;
-  }
-
-  // "True Value" (scaled back + anchored more to actual)
-  function generatedEstimate(row) {
-    const leagueTxt = row[divCol];
-    const base = baseByGroup.get(leagueGroupOf(leagueTxt)) || baseByGroup.get("solid") || 900_000;
-
-    const act = actualValueOf(row);
-    const anchorW = Number.isFinite(act) && act > 0 ? 0.45 : 0.0; // stronger anchor
-
-    const { score: bestScore } = bestNearRole(row);
-    const scoreFactor = 0.75 + 0.0025 * bestScore; // ~0.75..1.00
-
-    const toks = row.__pos_tokens || expandFMPositions(row[posCol] || "");
-    const fam = famFromTokens(toks);
-    const metrics = BIG_METRICS[fam] || [];
-    const pcts = metrics.map(m => pctStat(row[m], m, "Overall")).filter(Number.isFinite);
-    const bigAvg = pcts.length ? (pcts.reduce((a, b) => a + b, 0) / pcts.length) : 50;
-    const bigFactor = 0.90 + 0.0020 * bigAvg; // ~0.90..1.10
-
-    const mAge = ageMult(row[ageCol]);
-    const mMin = minutesMult(row[minsCol]);
-    const mPos = posMult(toks);
-
-    const tierD = secondTierFactor(leagueTxt);
-
-    let core = base * scoreFactor * bigFactor * mAge * mMin * mPos * tierD;
-    let blended = anchorW * act + (1 - anchorW) * core;
-
-    // conservative caps
-    const hardCeil = tierD <= 0.75 ? 25_000_000 : 120_000_000;
-    if (Number.isFinite(act)) {
-      const capUp = Math.max(3.0 * act, 1_000_000);   // <= 3x actual tag
-      const capDown = 0.45 * act;                     // but not <45% of tag
-      blended = Math.min(blended, capUp);
-      blended = Math.max(blended, capDown);
-    }
-    const floor = 75_000;
-    return Math.max(floor, Math.min(blended, hardCeil));
-  }
-
-  // "Buy At" (more realistic discounting)
-  function recommendedValue(row) {
-    const tv = generatedEstimate(row);
-    const leagueTxt = row[divCol];
-    const tierD = secondTierFactor(leagueTxt);
-    const baseNeg = tierD <= 0.75 ? 0.65 : 0.75; // tighter in lower tiers
-    const mins = numerify(row[minsCol]) || 0;
-    const age = numerify(row[ageCol]) || 25;
-    const minsAdj = mins < 900 ? 0.94 : mins < 1800 ? 0.97 : 1.0;
-    const ageAdj = age >= 30 ? 0.92 : age >= 27 ? 0.96 : 1.0;
-    return tv * baseNeg * minsAdj * ageAdj;
-  }
-
-  /* ----------- Me + KPIs ----------- */
-  const me = useMemo(()=> filtered.find(r => String(r[nameCol])===player) || filtered[0] || null, [filtered, player, nameCol]);
-  const meActual = me ? actualValueOf(me) : NaN;
-  const meTrue = me ? generatedEstimate(me) : NaN;
-  const meBuyAt = me ? recommendedValue(me) : NaN;
-  const deltaBuyVsAct = Number.isFinite(meActual) ? ((meBuyAt - meActual) / meActual) : NaN;
-  const deltaBuyVsTrue = Number.isFinite(meTrue) ? ((meBuyAt - meTrue) / meTrue) : NaN;
-
-  function getRoleLeaders(roleName) {
-    const key = roleName;
-    const cached = roleLeadersCacheRef.current.get(key);
-    if (cached) return cached;
-    const allowedBaseline = ROLE_BASELINES[roleName] || [];
-    const arr = filtered
-      .filter(r => sharesAny(r.__pos_tokens || expandFMPositions(r[posCol]||""), allowedBaseline))
-      .map(r => ({ row:r, name:r[nameCol], score: roleScoreFor(r, roleName) }))
-      .filter(o => Number.isFinite(o.score))
-      .sort((a,b)=> b.score - a.score);
-    roleLeadersCacheRef.current.set(key, arr);
-    return arr;
-  }
-  function rankInRole(roleName, row) {
-    const leaders = getRoleLeaders(roleName);
-    const k = rowKey(row);
-    const idx = leaders.findIndex(o => rowKey(o.row) === k);
-    return { rank: idx>=0? idx+1 : NaN, total: leaders.length };
-  }
-
-  const headerKpis = useMemo(()=>{
-    if (!me) return [];
-    const best = bestNearRole(me);
-    const bestRank = rankInRole(best.name, me);
-    return [
-      { k: "Age", v: Number.isFinite(numerify(me[ageCol])) ? Math.round(numerify(me[ageCol])) : "—" },
-      { k: "Pos", v: me[posCol] || "—" },
-      { k: "Club", v: me[clubCol] || "—" },
-      { k: "Mins", v: Number.isFinite(numerify(me[minsCol])) ? Math.round(numerify(me[minsCol])).toLocaleString() : "—" },
-      { k: "Best Role", v: `${best.name} (${tf(best.score,2)})${Number.isFinite(bestRank.rank)?` • #${bestRank.rank}/${bestRank.total}`:""}` },
-      { k: "Value", v: `${prettyMoney(meActual)} Actual • ${prettyMoney(meTrue)} True • Buy At: ${prettyMoney(meBuyAt)}` },
-    ];
-  },[me, ageCol, posCol, clubCol, minsCol, meActual, meTrue, meBuyAt]);
-
-  /* ----------- UI primitives ----------- */
-  function Card({ title, subtitle, right, children }) {
-    return (
-      <section className="card">
-        <div className="cardHead">
-          <div>
-            <div style={{fontWeight:800}}>{title}</div>
-            {subtitle ? <div className="status" style={{marginTop:4}}>{subtitle}</div> : null}
-          </div>
-          {right || null}
-        </div>
-        <div className="cardBody">{children}</div>
-      </section>
-    );
-  }
-
-  /* ----------- Modes ----------- */
-  function RadarMode() {
-    if (!me) return <div className="status">Load data and pick a player.</div>;
-    const stats = (ROLE_STATS[role] || []).filter(s => numericCols.includes(s));
-    const slices = stats.map(s => ({ label: LABELS.get(s)||s, pct: pctStat(me[s], s, role), raw: numerify(me[s]) }));
-    return (
-      <Card title={`Radar — ${me[nameCol]}`} subtitle={`${role} • baseline: ${baseline.replace("_"," ")}`}>
-        <Radar series={[{ name: me[nameCol], slices }]} />
-      </Card>
-    );
-  }
-
-  function PercentilesMode() {
-    if (!me) return <div className="status">Load data and pick a player.</div>;
-    const stats = (ROLE_STATS[role] || []).filter(s => numericCols.includes(s));
-    const items = stats.map(s => ({ label: LABELS.get(s)||s, value: clamp100(pctStat(me[s], s, role)), raw: numerify(me[s]) }));
-    return (
-      <Card title={`Percentiles — ${me[nameCol]}`} subtitle={`${role} • tooltips show percentile + role value`}>
-        <HBar items={items} titleFmt={(v)=>`${Number.isFinite(v)?v.toFixed(2):"—"}%`} />
-      </Card>
-    );
-  }
-
-  function RoleMatrixMode() {
-    const statsX = ROLE_STATS[roleX] || [];
-    const statsY = ROLE_STATS[roleY] || [];
-    if (!statsX.length || !statsY.length) return <div className="status">Pick two roles with available stats.</div>;
-    const pts = filtered.map(r => ({
-      name: r[nameCol], club: r[clubCol],
-      pos: (expandFMPositions(r[posCol]||"")[0] || "").toUpperCase(),
-      x: roleScoreFor(r, roleX), y: roleScoreFor(r, roleY)
-    }));
-    return (
-      <Card title={`Role Matrix — ${roleX} vs ${roleY}`} subtitle={`baseline: ${baseline.replace("_"," ")}`} right={<span className="badge">Color = position</span>}>
-        <div className="row" style={{marginBottom:8}}>
-          <div className="col">
-            <label className="lbl">Search in scatter</label>
-            <input className="input" placeholder="Type player/club/pos…" value={scatterQ} onChange={e=>setScatterQ(e.target.value)} />
-          </div>
-        </div>
-        <Scatter points={pts} xLabel={roleX} yLabel={roleY} q={scatterQ} highlightName={me?.[nameCol]} colorByPos />
-      </Card>
-    );
-  }
-
-  function StatScatterMode() {
-    const first = numericCols.find(c=>c!=="Minutes") || ""; const second = numericCols.find(c=>c!==first) || first;
-    const [xStat, setXStat] = useState(first);
-    const [yStat, setYStat] = useState(second);
-    const pts = filtered
-      .map(r => ({ name:r[nameCol], club:r[clubCol], pos:(expandFMPositions(r[posCol]||"")[0]||""), x:numerify(r[xStat]), y:numerify(r[yStat]) }))
-      .filter(d => Number.isFinite(d.x) && Number.isFinite(d.y));
-    return (
-      <Card title="Stat Scatter" subtitle="Highlight by search • color by position">
-        <div className="row" style={{marginBottom:8}}>
-          <div className="col">
-            <label className="lbl">X Stat</label>
-            <select className="input" value={xStat} onChange={e=>setXStat(e.target.value)}>
-              {numericCols.map(c=> <option key={c} value={c}>{LABELS.get(c)||c}</option>)}
-            </select>
-          </div>
-          <div className="col">
-            <label className="lbl">Y Stat</label>
-            <select className="input" value={yStat} onChange={e=>setYStat(e.target.value)}>
-              {numericCols.map(c=> <option key={c} value={c}>{LABELS.get(c)||c}</option>)}
-            </select>
-          </div>
-          <div className="col">
-            <label className="lbl">Search</label>
-            <input className="input" placeholder="Type player/club/pos…" value={scatterQ} onChange={e=>setScatterQ(e.target.value)} />
-          </div>
-        </div>
-        <Scatter points={pts} xLabel={LABELS.get(xStat)||xStat} yLabel={LABELS.get(yStat)||yStat} q={scatterQ} highlightName={me?.[nameCol]} colorByPos />
-      </Card>
-    );
-  }
-
-  /* NEW: Best Roles (bar chart with 2dp) */
-  function BestRolesMode() {
-    if (!me) return <div className="status">Load data and pick a player.</div>;
-    const near = nearRolesForRow(me);
-    if (!near.length) return <div className="status">No relevant roles for this position set.</div>;
-    const items = near
-      .map(rn => ({ label: rn, value: roleScoreFor(me, rn) }))
-      .sort((a,b)=> b.value - a.value)
-      .slice(0, 12);
-    const best = items[0];
-    const rankInfo = best ? rankInRole(best.label, me) : { rank: NaN, total: 0 };
-    return (
-      <Card title={`Best Roles — ${me[nameCol]}`} subtitle={`Top role rank: ${Number.isFinite(rankInfo.rank)?`#${rankInfo.rank} of ${rankInfo.total}`:"—"}`}>
-        <HBar items={items} titleFmt={(v)=>`${Number.isFinite(v)?v.toFixed(2):"—"}%`} />
-      </Card>
-    );
-  }
-
-  /* Role Leaders as bar chart (2dp) */
-  function RoleLeadersMode() {
-    const top = getRoleLeaders(role).slice(0, 20);
-    const items = top.map(o => ({
-      label: o.name,
-      value: o.score,
-      extra: `${o.row[clubCol]||""} • ${o.row[posCol]||""}`
-    }));
-    return (
-      <Card title={`Role Leaders — ${role}`} subtitle={`baseline: ${baseline.replace("_"," ")}`}>
-        <HBar items={items} titleFmt={(v)=>`${Number.isFinite(v)?v.toFixed(2):"—"}%`} />
-      </Card>
-    );
-  }
-
-  /* Player Profile — shows best-role radar + rank + values */
-function PlayerProfileMode() {
-  if (!me) return <div className="status">Load data and pick a player.</div>;
-
-  const best = bestNearRole(me);                            // { name, score }
-  const bestRank = rankInRole(best.name, me);              // { rank, total }
-
-  // Build radar for the player's best role only (using all relevant stats)
-  const bestStats = (ROLE_STATS[best.name] || []).filter(s => numericCols.includes(s));
-  const slices = bestStats.map(s => ({
-    label: LABELS.get(s) || s,
-    pct: pctStat(me[s], s, best.name),
-    raw: numerify(me[s]),
-  }));
-
-  // Top stats list (2dp) for best role
-  const topItems = bestStats
-    .map(s => ({ label: LABELS.get(s) || s, value: clamp100(pctStat(me[s], s, best.name)) }))
-    .filter(d => Number.isFinite(d.value))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 10);
-
-  const act = actualValueOf(me);
-  const tv  = generatedEstimate(me);
-  const buy = recommendedValue(me);
-
-  return (
-    <>
-      <Card
-        title={`Player Profile — ${me[nameCol]}`}
-        subtitle={`Best Role: ${best.name} • Score: ${Number.isFinite(best.score) ? best.score.toFixed(2) : "—"}% • Rank: ${Number.isFinite(bestRank.rank) ? `#${bestRank.rank}/${bestRank.total}` : "—"}`}
-        right={
-          <div className="seg">
-            <span className="badge">Actual: {prettyMoney(act)}</span>
-            <span className="badge">True Value: {prettyMoney(tv)}</span>
-            <span className="badge">Buy At: {prettyMoney(buy)}</span>
-          </div>
-        }
-      >
-        <Radar series={[{ name: me[nameCol], slices }]} />
-      </Card>
-
-      <Card title="Top Stats (Best Role)" subtitle="Percentiles vs chosen baseline">
-        <HBar items={topItems} titleFmt={(v) => `${Number.isFinite(v) ? v.toFixed(2) : "—"}%`} />
-      </Card>
-    </>
-  );
+/* ===================== Sticky state ===================== */
+function useStickyState(key, initial) {
+  const [v, setV] = React.useState(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw != null ? JSON.parse(raw) : initial;
+    } catch { return initial; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
+  }, [key, v]);
+  return [v, setV];
 }
 
 
-  /* NEW: Stat Leaders (bar chart with 2dp) */
-  function StatLeadersMode() {
-    const [stat, setStat] = useState(numericCols[0] || "");
-    const [limit, setLimit] = useState(20);
-    const [asc, setAsc] = useState(false);
+/* ---- HOTFIX: normalize value config from older localStorage blobs ---- */
+function normalizeValueCfg(cfg){
+  const FALLBACK = {
+    leagueWeights: { elite:1.00, strong:0.83, solid:0.70, growth:0.60, develop:0.52 },
+    baseScales:    { elite:6.2,  strong:4.8,  solid:3.5,  growth:2.6,  develop:2.0 },
+    // wage knobs (scaled up a bit)
+    wagePerM: 1600,                   // £/week per £1m True Value
+    wageMaxMult: 1.45,                // cap multiplier
+    wageFloor: 250,                   // never below this
+    wageLeagueMults: { elite:1.00, strong:0.85, solid:0.70, growth:0.60, develop:0.50 },
+  };
+  const d = DEFAULT_VALUE_CONFIG || {};
+  const out = { ...FALLBACK, ...d, ...(cfg||{}) };
 
-    const items = useMemo(()=>{
-      const arr = filtered
-        .map(r => ({ label: r[nameCol], value: numerify(r[stat]), extra: `${r[clubCol]||""} • ${r[posCol]||""}` }))
-        .filter(o => Number.isFinite(o.value));
-      arr.sort((a,b)=> asc ? (a.value - b.value) : (b.value - a.value));
-      return arr.slice(0, Math.max(5, Math.min(50, limit)));
-    }, [filtered, stat, asc, limit]);
+  // Deep merge tiers so all five exist even if missing in saved cfg
+  out.leagueWeights = {
+    ...FALLBACK.leagueWeights,
+    ...(d.leagueWeights||{}),
+    ...((cfg && cfg.leagueWeights) || {})
+  };
+  out.baseScales = {
+    ...FALLBACK.baseScales,
+    ...(d.baseScales||{}),
+    ...((cfg && cfg.baseScales) || {})
+  };
+  out.wageLeagueMults = {
+    ...FALLBACK.wageLeagueMults,
+    ...(d.wageLeagueMults||{}),
+    ...((cfg && cfg.wageLeagueMults) || {})
+  };
+
+  // Ensure scalar fields exist
+  out.wagePerM    = out.wagePerM    ?? FALLBACK.wagePerM;
+  out.wageMaxMult = out.wageMaxMult ?? FALLBACK.wageMaxMult;
+  out.wageFloor   = out.wageFloor   ?? FALLBACK.wageFloor;
+
+  return out;
+}
+
+/* ===================== APP — PART 2/2 (FULL REPLACEMENT) ===================== */
+
+
+/* NOTE:
+   This file assumes PART 1/2 changes (CSS, Radar/HBar/Scatter, DEFAULT_VALUE_CONFIG) have been applied.
+*/
+
+/* ===================== Error Boundary ===================== */
+
+/* Reuse helpers from PART 1 (assumed present in file): POS14, ROLE_BOOK, ROLE_STATS, ROLE_WEIGHTS,
+   ROLE_BASELINES, ALL_ROLE_STATS, LABELS, numerify, parseMoneyRange, parseOneMoney, money, tf, clamp100,
+   normalizeValueCfg, buildPercentileIndex, percentileFor, roleScoreFor, bestNearRole, expandFMPositions,
+   famFromTokens, attachTooltip, useResizeObserver, Radar, HBar, Scatter, etc.
+   (These are defined in PART 1/2 as you applied.)
+*/
+
+/* ===================== APP ===================== */
+export default function App(){
+  /* ---------- UI Theme / Mode ---------- */
+  const [themeName, setThemeName] = useStickyState("ui:theme","sleek");
+  const theme = THEMES[themeName] || THEMES.sleek;
+  const [mode, setMode] = useStickyState("ui:mode","Player Profile");
+
+  /* ---------- Data ---------- */
+  const [rows, setRows] = useState([]);
+  const [status, setStatus] = useState("Load a CSV or HTML table exported from your data source.");
+
+  /* ---------- Filters ---------- */
+  const [posCohort, setPosCohort] = useStickyState("flt:posCohort", POS14);
+  const [minMinutes, setMinMinutes] = useStickyState("flt:minMinutes", 600);
+  const [maxAge, setMaxAge] = useStickyState("flt:maxAge", 33);
+
+  /* ---------- Search (buffered + applied) ---------- */
+  const [searchQuery, setSearchQuery] = useStickyState("flt:q:query", "");
+  const [searchApplied, setSearchApplied] = useStickyState("flt:applied", false);
+  
+  const handleSearch = useCallback((value) => {
+    setSearchQuery(value);
+    setSearchApplied(!!value);
+  }, [setSearchQuery, setSearchApplied]);  const clearSearch = useCallback(()=>{
+    handleSearch("");
+  }, [handleSearch]);
+
+  /* ---------- Selections ---------- */
+  const [player, setPlayer] = useStickyState("sel:player", "");
+  const [role, setRole] = useStickyState("sel:role", Object.keys(ROLE_STATS)[0] || "");
+
+  /* ---------- Scatter & stat selects ---------- */
+  const [roleX, setRoleX] = useStickyState("scatter:roleX", Object.keys(ROLE_STATS)[0] || "");
+  const [roleY, setRoleY] = useStickyState("scatter:roleY", Object.keys(ROLE_STATS)[1] || Object.keys(ROLE_STATS)[0] || "");
+
+  const allStats = useMemo(()=> Array.from(new Set([ ...Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights)) ])), []);
+  const [statX, setStatX] = useStickyState("scatter:statX", allStats[0] || "Shots/90");
+  const [statY, setStatY] = useStickyState("scatter:statY", allStats[1] || "SoT/90");
+
+  /* ---------- Value model config ---------- */
+  const [valueCfg, setValueCfg] = useStickyState("value:cfg", DEFAULT_VALUE_CONFIG);
+  const safeValueCfg = useMemo(() => normalizeValueCfg(valueCfg), [valueCfg]);
+
+  /* ---------- Computation scope ---------- */
+  const SCOPE_OPTIONS = ["Filtered Cohort","All Loaded","Role Baseline"];
+  const [compScope, setCompScope] = useStickyState("comp:scope", "Filtered Cohort");
+
+  /* ---------- Custom archetype ---------- */
+  const [customName, setCustomName] = useStickyState("custom:name", "Custom Archetype");
+  const [customBaseline, setCustomBaseline] = useStickyState("custom:baseline", ["M (C)"]);
+  const [customWeights, setCustomWeights] = useStickyState("custom:weights", { "Progressive Passes/90": 1.4, "Key Passes/90": 1.2, "Dribbles/90": 1.2 });
+
+  /* ---------- Inject theme CSS ---------- */
+  useEffect(()=>{
+    const style = document.createElement("style");
+    style.setAttribute("data-app-css","1");
+    style.innerHTML = CSS(theme, themeName);
+    document.head.appendChild(style);
+    return ()=>{ try{ document.head.removeChild(style);}catch{} };
+  }, [themeName]);
+
+  /* ---------- File loading ---------- */
+  async function handleFile(e){
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setStatus(`Loading ${file.name}…`);
+      const ext = file.name.toLowerCase().split(".").pop();
+      if (ext === "csv") {
+        await new Promise((resolve, reject) => {
+          Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (res) => {
+              const rowsN = normalizeHeadersRowObjects(res.data || []);
+              setRows(rowsN);
+              setStatus(`Loaded ${rowsN.length} rows.`);
+              resolve();
+            },
+            error: (err) => reject(err),
+          });
+        });
+      } else if (ext === "html" || ext === "htm") {
+        const rowsN = await parseHtmlTable(file);
+        setRows(normalizeHeadersRowObjects(rowsN));
+        setStatus(`Loaded ${rowsN.length} rows from HTML table.`);
+      } else {
+        setStatus("Unsupported file. Please load CSV or HTML.");
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus(`Failed: ${String(err?.message || err)}`);
+    }
+  }
+
+  /* ---------- Filtered rows (uses only applied searchQuery) ---------- */
+  const filteredRows = useMemo(() => {
+    const cohort = new Set(posCohort.map(normToken));
+    return rows.filter(r => {
+      const mins = numerify(r["Minutes"]);
+      const age = numerify(r["Age"]);
+      const tokens = expandFMPositions(r["Pos"]);
+      const hasPos = tokens.some(t => cohort.has(normToken(t)));
+      const minutesOk = !Number.isFinite(minMinutes) ? true : (Number.isFinite(mins) ? mins >= minMinutes : false);
+      const ageOk = !Number.isFinite(maxAge) ? true : (!Number.isFinite(age) ? true : age <= maxAge);
+      const q = (searchQuery || "").trim().toLowerCase();
+      const name = String(r["Name"]||"").toLowerCase();
+      const club = String(r["Club"]||"").toLowerCase();
+      const pos = String(r["Pos"]||"").toLowerCase();
+      const qOk = !q || name.includes(q) || club.includes(q) || pos.includes(q);
+      return hasPos && minutesOk && ageOk && qOk;
+    });
+  }, [rows, posCohort, minMinutes, maxAge, searchQuery]);
+
+  /* ---------- Percentile scope rows & index ---------- */
+  const scopeRows = useMemo(() => {
+    if (compScope === "All Loaded") return rows;
+    if (compScope === "Role Baseline") {
+      const base = new Set((ROLE_BASELINES[role]||[]).map(normToken));
+      return rows.filter(r => {
+        const toks = expandFMPositions(r["Pos"]);
+        return toks.some(t => base.has(normToken(t)));
+      });
+    }
+    return filteredRows;
+  }, [compScope, rows, filteredRows, role]);
+
+  // Base percentile index on all rows for consistent stats
+  const pctIndex = useMemo(() => buildPercentileIndex(rows, allStats), [rows, allStats]);
+  
+  // Scope-specific percentile index for display
+  // If the scope reduces to <=1 rows (e.g. user filtered to a single player), fall back
+  // to the full `rows` so percentiles are meaningful instead of defaulting to 50%.
+  const displayScopeRows = useMemo(() => {
+    try {
+      return (Array.isArray(scopeRows) && scopeRows.length > 1) ? scopeRows : rows;
+    } catch { return rows; }
+  }, [scopeRows, rows]);
+
+  const scopePctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, allStats), [displayScopeRows, allStats]);
+
+  /* ---------- Players list & selection sanity ---------- */
+  const players = useMemo(() => filteredRows.map(r => r["Name"]).filter(Boolean), [filteredRows]);
+  useEffect(() => {
+    if (!player && players.length) setPlayer(players[0]);
+    if (player && !players.includes(player) && players.length) setPlayer(players[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players]);
+
+  /* ---------- Helpers ---------- */
+  const rowByName = useMemo(() => {
+    const m = new Map();
+    for (const r of filteredRows) m.set(r["Name"], r);
+    return m;
+  }, [filteredRows]);
+
+  const roleScoreOfRow = useCallback((r, roleName) => Number(roleScoreFor(r, roleName, scopePctIndex) || 0), [scopePctIndex]);
+
+  const bestRoleCache = useMemo(() => {
+    const map = new Map();
+    for (const r of filteredRows) map.set(r["Name"], bestNearRole(r, pctIndex)); // {role, score}
+    return map;
+  }, [filteredRows, pctIndex]);
+
+  function bestRoleRank(name){
+    const r = rowByName.get(name);
+    if (!r) return { rank: NaN, of: 0, role: null, score: 0 };
+    const br = bestRoleCache.get(name) || { role:null, score:0 };
+    if (!br.role) return { rank: NaN, of: 0, role: null, score: 0 };
+    const base = new Set((ROLE_BASELINES[br.role]||[]).map(normToken));
+    const cohort = filteredRows.filter(row => {
+      const toks = expandFMPositions(row["Pos"]);
+      return toks.some(t=>base.has(normToken(t)));
+    });
+    const ranked = cohort
+      .map(rr => ({ n: rr["Name"], s: roleScoreOfRow(rr, br.role) }))
+      .sort((a,b)=>b.s - a.s);
+    const idx = ranked.findIndex(x => x.n === name);
+    return { rank: idx>=0? idx+1 : NaN, of: ranked.length, role: br.role, score: br.score };
+  }
+
+  /* ---------- Wage parsing (current wage from dataset) ---------- */
+  const wageWeeklyOf = useCallback((row)=>{
+    const raw = getCell(row, "Wage");
+    const v = parseOneMoney(raw);
+    return Number.isFinite(v) ? v : NaN;
+  },[]);
+
+  /* ---------- Market-adjusted value wrapper (damped extremes + rank uplift) ---------- */
+  const marketAdjustedValueM = useCallback((name)=>{
+    const r = rowByName.get(name); if (!r) return NaN;
+    const base = trueValueOf(r, pctIndex, safeValueCfg); // { valueM, bestRole, bestScore, group }
+    let { valueM, bestRole, bestScore, group } = base;
+
+    // rank uplift (scaled by rank share)
+    const rk = bestRoleRank(name);
+    const rankShare = Number.isFinite(rk.rank) && rk.of>0 ? (rk.of - rk.rank + 1) / rk.of : 0;
+    const rankFactor = 1 + (safeValueCfg.topRankPremiumMax || 0.60) * rankShare * (group === "elite" ? 1 : 0.45);
+    valueM *= rankFactor;
+
+    // slight extra for elite forwards (kept conservative)
+    if (group === "elite" && famFromTokens(expandFMPositions(getCell(r,"Pos"))) === "FW") {
+      const fwPrem = safeValueCfg.eliteFwPremium || 0.25;
+      valueM *= (1 + fwPrem * 0.7);
+    }
+
+    // enforce elite floors for very top scorers
+    if (group === "elite" && bestScore >= 90) {
+      const floors = safeValueCfg.eliteTopFloorM || {};
+      const famKey = famFromTokens(expandFMPositions(getCell(r,"Pos"))) || "MF";
+      const floorM = floors[famKey] || 0;
+      if (valueM < floorM) valueM = floorM;
+    }
+
+    // damping (log-space compression) to reduce extreme tails
+    try {
+      const safe = Math.max(0.1, valueM);
+      const dampFactor = (group === "elite") ? 0.94 : 0.97;
+      valueM = Math.exp(Math.log(safe) * dampFactor);
+    } catch (err) { /* ignore */ }
+
+    return valueM;
+  }, [rowByName, pctIndex, safeValueCfg]);
+
+  /* ---------- True value, buyAt (wrapped) ---------- */
+  const trueValue = useCallback((name)=>{ const m = marketAdjustedValueM(name); return Number.isFinite(m) ? m*1e6 : NaN; }, [marketAdjustedValueM]);
+  const buyAt = useCallback((name)=>{ const m = marketAdjustedValueM(name); if (!Number.isFinite(m)) return NaN; return m * (safeValueCfg.buyDiscount || 0.95) * 1e6; }, [marketAdjustedValueM, safeValueCfg]);
+
+  /* ---------- Fair wage + max wage (with elite clamp and respect current) ---------- */
+  const fairWage = useCallback((name)=>{ // £/week
+    const r = rowByName.get(name); if (!r) return NaN;
+    const valM = marketAdjustedValueM(name);
+    if (!Number.isFinite(valM)) return NaN;
+
+    const age = numerify(getCell(r,"Age"));
+    const pts = Object.entries(safeValueCfg.wageAgeBoost||{}).map(([k,v])=>[+k, v]).sort((a,b)=>a[0]-b[0]);
+    const ageBoost = (()=> {
+      if (!Number.isFinite(age) || !pts.length) return 1;
+      if (age <= pts[0][0]) return pts[0][1];
+      if (age >= pts[pts.length-1][0]) return pts[pts.length-1][1];
+      for (let i=1;i<pts.length;i++){
+        const [x1,y1] = pts[i-1], [x2,y2] = pts[i];
+        if (age >= x1 && age <= x2) return y1 + (y2-y1) * ((age-x1)/(x2-x1));
+      }
+      return 1;
+    })();
+
+    const league = String(getCell(r,"League")||"");
+    const group = leagueGroupOf(league);
+    let lfac = (safeValueCfg.wageLeagueFactor||{})[group] ?? 1;
+
+    // clamp elite multiplier to avoid runaway wages from model extremes
+    if (group === "elite") lfac = Math.min(lfac, 1.45);
+
+    const floor = Math.max(safeValueCfg.wageMinAbsolute||0, (safeValueCfg.wageGroupFloor||{})[group] || 0);
+    const raw = (safeValueCfg.wagePerM||4800) * valM * lfac * ageBoost;
+    return Math.max(floor, raw);
+  }, [rowByName, marketAdjustedValueM, safeValueCfg]);
+
+  const maxWage = useCallback((name)=>{ // £/week
+    const r = rowByName.get(name); if (!r) return NaN;
+    const modelMax = (fairWage(name) || 0) * (safeValueCfg.wageMaxMult || 1.6);
+    const current = wageWeeklyOf(r);
+    const respect = Number.isFinite(current) ? current * (safeValueCfg.wageRespectCurrentMult || 1.10) : 0;
+    return Math.max(modelMax, respect);
+  }, [rowByName, fairWage, wageWeeklyOf, safeValueCfg]);
+
+  /* ---------- Scatter datasets ---------- */
+  const roleMatrixPoints = useMemo(()=>{
+    return filteredRows.map(r => ({
+      name: r["Name"],
+      pos: (expandFMPositions(r["Pos"])[0]||""),
+      club: r["Club"],
+      x: roleScoreOfRow(r, roleX),
+      y: roleScoreOfRow(r, roleY),
+    })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+  }, [filteredRows, roleX, roleY, roleScoreOfRow]);
+
+  const statScatterPoints = useMemo(()=>{
+    return filteredRows.map(r => ({
+      name: r["Name"],
+      pos: (expandFMPositions(r["Pos"])[0]||""),
+      club: r["Club"],
+      x: numerify(getCell(r, statX)),
+      y: numerify(getCell(r, statY)),
+    })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+  }, [filteredRows, statX, statY]);
+
+  /* ===================== Modes ===================== */
+
+  function PlayerProfileMode(){
+    const r = rowByName.get(player);
+    const headerRef = useRef(null);
+    const bestBoxRef = useRef(null);
+    const wageRef = useRef(null);
+
+    useEffect(()=>{ if (!headerRef.current) return; const t=attachTooltip(headerRef.current); headerRef.current.__tip=t; return ()=>t?.destroy?.(); },[]);
+    useEffect(()=>{ if (!bestBoxRef.current) return; const t=attachTooltip(bestBoxRef.current); bestBoxRef.current.__tip=t; return ()=>t?.destroy?.(); },[]);
+    useEffect(()=>{ if (!wageRef.current) return; const t=attachTooltip(wageRef.current); wageRef.current.__tip=t; return ()=>t?.destroy?.(); },[]);
+
+    if (!r) return <div className="card"><div className="cardBody">Select a player</div></div>;
+
+    const br = bestRoleCache.get(player) || { role:null, score:0 };
+    const bestRole = br.role || Object.keys(ROLE_STATS)[0] || "";
+    const bestScore = Number(br.score || 0);
+
+    // compute player's top two roles using main pctIndex for consistency
+    const roleScores = Object.keys(ROLE_BOOK).map(roleName => {
+      const baseline = ROLE_BASELINES[roleName] || [];
+      if (!sharesAny(expandFMPositions(getCell(r,"Pos")), baseline)) return null;
+      return { roleName, score: roleScoreFor(r, roleName, pctIndex) || 0 };
+    }).filter(Boolean).sort((a,b)=>b.score-a.score);
+    const topRoles = roleScores.slice(0,2).map(x => x.roleName);
+    const topRoleA = topRoles[0] || bestRole;
+    const topRoleB = topRoles[1] || Object.keys(ROLE_STATS)[0] || "";
+
+    const statsBestRole = ROLE_STATS[bestRole] || [];
+    const radarSeries = [{
+      name: `${player} — ${bestRole}`,
+      color: "var(--accent)",
+      slices: statsBestRole.map(st => {
+        const raw = numerify(getCell(r, st));
+        // Use the main pctIndex for core calculations and scopePctIndex for display
+        const corePct = percentileFor(pctIndex, st, raw);
+        const displayPct = percentileFor(scopePctIndex, st, raw);
+        return { label: LABELS.get(st)||st, raw, pct: displayPct, corePct };
+      })
+    }];
+
+    const mins = numerify(r["Minutes"]);
+    const age  = numerify(r["Age"]);
+    const pos  = r["Pos"] || "—";
+    const club = r["Club"] || "—";
+    const league = r["League"] || "—";
+
+    const goals   = Number.isFinite(numerify(r["Goals"])) ? numerify(r["Goals"]) : numerify(r["Gls"]);
+    const assists = Number.isFinite(numerify(r["Assist"])) ? numerify(r["Assist"]) : numerify(r["Assists"]);
+
+    const gameValRaw = getCell(r,"Transfer Value");
+    const gameValMid = parseMoneyRange(gameValRaw).mid;
+    const tv = trueValue(player);
+    const ba = buyAt(player);
+
+    const currentW = wageWeeklyOf(r);
+    const fw = fairWage(player);
+    const mw = maxWage(player);
+
+    const bestPairs = allStats.map(st => {
+      const raw = numerify(getCell(r, st));
+      const pct = percentileFor(scopePctIndex, st, raw);
+      return { st, label: LABELS.get(st)||st, raw, pct };
+    }).filter(x=>Number.isFinite(x.pct))
+      .sort((a,b)=>b.pct-a.pct)
+      .slice(0, 12);
+
+    // role matrix dataset for top roles
+    const roleMatrixForTop = useMemo(()=> {
+      const rx = topRoleA; const ry = topRoleB;
+      const pts = filteredRows.map(rr => ({
+        name: rr["Name"],
+        club: rr["Club"],
+        pos: expandFMPositions(rr["Pos"])[0]||"",
+        x: roleScoreOfRow(rr, rx),
+        y: roleScoreOfRow(rr, ry)
+      })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+      return { pts, rx, ry };
+    }, [filteredRows, topRoleA, topRoleB, roleScoreOfRow]);
 
     return (
-      <Card title="Stat Leaders" subtitle="Top players by a chosen stat">
-        <div className="row" style={{marginBottom:8}}>
-          <div className="col">
-            <label className="lbl">Stat</label>
-            <select className="input" value={stat} onChange={e=>setStat(e.target.value)}>
-              {numericCols.map(c=> <option key={c} value={c}>{LABELS.get(c)||c}</option>)}
-            </select>
-          </div>
-          <div className="col">
-            <label className="lbl">Show</label>
-            <input className="input" type="number" min={5} max={50} value={limit} onChange={e=>setLimit(Number(e.target.value)||20)} />
-          </div>
-          <div className="col">
-            <label className="lbl">Order</label>
-            <button className="btn ghost tight" onClick={()=>setAsc(a=>!a)}>{asc?"Ascending":"Descending"}</button>
+      <>
+        <div className="playerBar" ref={headerRef}>
+          <div className="playerHeader">
+            <div className="playerHeaderTop">
+              <div className="phName">{player}</div>
+              <div className="badge">{pos}</div>
+              <div className="badge">{club}</div>
+              {league && <div className="badge">{league}</div>}
+            </div>
+
+            <div className="phKpis">
+              <div className="phKpi"><div>Age</div><b>{Number.isFinite(age)?tf(age,0):"—"}</b></div>
+              <div className="phKpi"><div>Minutes</div><b>{Number.isFinite(mins)?tf(mins,0):"—"}</b></div>
+              <div className="phKpi"><div>Goals</div><b>{Number.isFinite(goals)?tf(goals,0):"—"}</b></div>
+              <div className="phKpi"><div>Assists</div><b>{Number.isFinite(assists)?tf(assists,0):"—"}</b></div>
+
+              <div className="phKpi"><div>Game Value</div><b>{ Number.isFinite(gameValMid) ? money(gameValMid) : (gameValRaw || "—") }</b></div>
+              <div className="phKpi"><div>True Value</div><b>{money(tv)}</b></div>
+              <div className="phKpi"><div>Buy At</div><b>{money(ba)}</b></div>
+              <div className="phKpi" style={{fontSize: "10px"}}><div>Best Role</div><b>{bestRole}</b></div>
+              <div className="phKpi"><div>Best Score</div><b>{Number.isFinite(bestScore)?bestScore.toFixed(2):"—"}</b></div>
+
+              <div className="phKpi" ref={wageRef}>
+                <div>Current Wage</div><b>{Number.isFinite(currentW)? money(currentW)+"/wk" : "—"}</b>
+              </div>
+              <div className="phKpi">
+                <div>Fair Wage</div><b>{money(fw)}/wk</b>
+              </div>
+              <div className="phKpi">
+                <div>Max Wage</div><b>{money(mw)}/wk</b>
+              </div>
+            </div>
           </div>
         </div>
-        <HBar items={items} titleFmt={(v)=> Number.isFinite(v) ? v.toFixed(2) : "—"} valueMax={Math.max(...items.map(i=>i.value), 1)} />
-      </Card>
+
+        <div style={{display: "flex", flexDirection: "column", gap: "12px", padding: "0 12px"}}>
+          {/* Compact Row: Radar and Stats side by side */}
+          <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", alignItems: "stretch"}}>
+            
+            {/* Pizza Chart - Compact */}
+            <div className="card">
+              <div className="cardHead" style={{padding: "8px 12px"}}>
+                <div style={{fontWeight:800, fontSize: "14px"}}>Role Pizza — {bestRole}</div>
+                <div className="badge" style={{fontSize: "10px"}}>vs {compScope}</div>
+              </div>
+              <div className="cardBody" style={{padding: "8px"}}>
+                <div style={{fontSize: "11px", color: "var(--muted)", marginBottom: "4px"}}>
+                  {player} — {bestRole}
+                </div>
+                <div style={{width: "100%", height: "450px"}}>
+                  <Pizza 
+                    playerName={player}
+                    playerData={r}
+                    roleStats={statsBestRole}
+                    compScope={compScope}
+                    pctIndex={pctIndex}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Key Statistics - Compact */}
+            <div className="card">
+              <div className="cardHead" style={{padding: "8px 12px"}}>
+                <div style={{fontWeight:800, fontSize: "14px"}}>Key Statistics</div>
+                <div className="badge" style={{fontSize: "10px"}}>Top 12</div>
+              </div>
+              <div className="cardBody" ref={bestBoxRef} style={{padding:"8px", maxHeight: "300px", overflowY: "auto"}}>
+                {bestPairs.map((pair,i)=>(
+                  <div key={i} style={{
+                    display: "flex", 
+                    justifyContent: "space-between", 
+                    alignItems: "center", 
+                    padding: "4px 0",
+                    borderBottom: i < bestPairs.length - 1 ? "1px solid var(--cardBorder)" : "none",
+                    fontSize: "12px"
+                  }}>
+                    <div style={{fontWeight:600, overflow: "hidden", textOverflow: "ellipsis"}}>{pair.label}</div>
+                    <div style={{display: "flex", alignItems: "center", gap: "6px", flexShrink: 0}}>
+                      <div style={{color: "var(--muted)", fontSize: "11px"}}>{tf(pair.raw,2)}</div>
+                      <div style={{fontWeight:800, fontSize: "13px", color: pair.pct >= 90 ? "var(--accent)" : "inherit", minWidth: "40px", textAlign: "right"}}>
+                        {tf(pair.pct,1)}%
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Role Matrix - Full Width but Compact */}
+          <div className="card">
+            <div className="cardHead" style={{padding: "8px 12px"}}>
+              <div style={{fontWeight:800, fontSize: "14px"}}>Role Matrix — {topRoleA} vs {topRoleB}</div>
+              <div className="badge" style={{fontSize: "10px"}}>Comparison</div>
+            </div>
+            <div className="cardBody" style={{padding: "12px"}}>
+              <div style={{width: "100%", height: "750px", overflow: "hidden"}}>
+                <Scatter
+                  points={roleMatrixForTop.pts}
+                  xLabel={`${roleMatrixForTop.rx} score`}
+                  yLabel={`${roleMatrixForTop.ry} score`}
+                  q=""
+                  highlightName={player}
+                  isProfileMode={true}
+                  onPick={name => setPlayer(name && name.name ? name.name : (name || ""))}
+                />
+              </div>
+              <div style={{marginTop: "8px", fontSize: "11px", color: "var(--muted)"}}>
+                Highlighted: <strong>{player}</strong> • Roles: <strong>{topRoleA}</strong>{topRoleB ? `, ${topRoleB}` : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
     );
   }
 
-  /* Player Finder — include Best Role rank */
-  function PlayerFinderMode() {
-    const cols = ["Name","Club","Pos","Minutes","Age","Best Role","Best Role %","Rank (Best Role)","True Value","Buy At","Actual"];
-    const data = filtered.slice(0, 300).map(r => {
-      const best = bestNearRole(r);
-      const rk = rankInRole(best.name, r);
-      return {
-        name: r[nameCol],
-        club: r[clubCol],
-        pos: r[posCol],
-        mins: Number.isFinite(numerify(r[minsCol])) ? Math.round(numerify(r[minsCol])) : null,
-        age: Number.isFinite(numerify(r[ageCol])) ? Math.round(numerify(r[ageCol])) : null,
-        bestRole: best.name,
-        bestPct: Number.isFinite(best.score)? best.score : NaN,
-        rankText: Number.isFinite(rk.rank) ? `#${rk.rank}/${rk.total}` : "—",
-        trueV: generatedEstimate(r),
-        buyAt: recommendedValue(r),
-        act: actualValueOf(r)
-      };
-    });
-
+  function RadarMode(){
+    const r = rowByName.get(player);
+    if (!r) return <div className="card"><div className="cardBody">Select a player</div></div>;
+    const stats = ROLE_STATS[role] || [];
+    const series = [{
+      name: `${player} — ${role}`,
+      color: "var(--accent)",
+      slices: stats.map(st => {
+        const raw = numerify(getCell(r, st));
+        const pct = percentileFor(scopePctIndex, st, raw);
+        return { label: LABELS.get(st)||st, raw, pct };
+      })
+    }];
     return (
-      <Card title="Player Finder" subtitle="Filtered list • includes ranking in their best role">
-        <div className="scroll">
+      <div className="card">
+        <div className="cardHead">
+          <div style={{fontWeight:800, fontSize: "1.1em"}}>Radar Chart — {player} ({role})</div>
+          <div className="badge">Percentiles vs {compScope}</div>
+        </div>
+        <div className="cardBody"><Radar series={series}/></div>
+      </div>
+    );
+  }
+
+  function PercentilesMode(){
+    const r = rowByName.get(player);
+    if (!r) return <div className="card"><div className="cardBody">Select a player</div></div>;
+    const pairs = ALL_ROLE_STATS.map(st => {
+      const raw = numerify(getCell(r, st));
+      const pct = percentileFor(scopePctIndex, st, raw);
+      return { stat: st, pct, raw };
+    }).filter(x => Number.isFinite(x.pct));
+    pairs.sort((a,b)=>b.pct-a.pct);
+    return (
+      <div className="card">
+        <div className="cardHead">
+          <div style={{fontWeight:800, fontSize: "1.1em"}}>Percentiles — {player}</div>
+          <div className="badge">vs {compScope}</div>
+        </div>
+        <div className="cardBody scroll">
           <table className="table">
-            <thead>
-              <tr>
-                {cols.map(c=> <th key={c}>{c}</th>)}
-              </tr>
-            </thead>
+            <thead><tr><th>Stat</th><th>Value</th><th>Percentile</th></tr></thead>
             <tbody>
-              {data.map((d,i)=>(
+              {pairs.map((p,i)=>(
                 <tr key={i}>
-                  <td>{d.name}</td>
-                  <td>{d.club || "—"}</td>
-                  <td>{d.pos || "—"}</td>
-                  <td>{Number.isFinite(d.mins) ? d.mins.toLocaleString() : "—"}</td>
-                  <td>{Number.isFinite(d.age) ? d.age : "—"}</td>
-                  <td>{d.bestRole}</td>
-                  <td>{Number.isFinite(d.bestPct) ? `${d.bestPct.toFixed(2)}%` : "—"}</td>
-                  <td>{d.rankText}</td>
-                  <td>{prettyMoney(d.trueV)}</td>
-                  <td>{prettyMoney(d.buyAt)}</td>
-                  <td>{prettyMoney(d.act)}</td>
+                  <td>{LABELS.get(p.stat)||p.stat}</td>
+                  <td>{Number.isFinite(p.raw) ? tf(p.raw,2) : "—"}</td>
+                  <td>{tf(p.pct,2)}%</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </Card>
+      </div>
     );
   }
 
-  /* ----------- Layout ----------- */
-  return (
-    <ErrorBoundary>
-      <div className="app">
-        <style>{CSS(theme, themeName)}</style>
+  function RoleMatrixMode(){
+    return (
+      <div className="card">
+        <div className="cardHead"><div style={{fontWeight:800, fontSize: "1.1em"}}>Role Matrix — {roleX} vs {roleY}</div></div>
+        <div className="cardBody">
+          <Scatter
+            points={roleMatrixPoints}
+            xLabel={`${roleX} score`}
+            yLabel={`${roleY} score`}
+            q={searchQuery}
+            highlightName={player}
+            onPick={name => setPlayer(name && name.name ? name.name : (name || ""))}
+          />
+        </div>
+      </div>
+    );
+  }
 
-        <header className="topbar">
-          <div className="brand">analytics — D3</div>
-          <nav className="tabs" role="tablist">
-            {MODES.map(m => (
-              <button key={m} className={`tab ${mode===m?"active":""}`} onClick={()=>setMode(m)}>{m}</button>
-            ))}
-          </nav>
-          <div className="spacer"/>
-          <div className="seg">
-            <button className={`segBtn ${baseline==="role_group"?"active":""}`} onClick={()=>setBaseline("role_group")}>Baseline: role group</button>
-            <button className={`segBtn ${baseline==="sidebar"?"active":""}`} onClick={()=>setBaseline("sidebar")}>Sidebar positions</button>
-            <button className={`segBtn ${baseline==="global"?"active":""}`} onClick={()=>setBaseline("global")}>Global</button>
+  function StatScatterMode(){
+    return (
+      <div className="card">
+        <div className="cardHead"><div style={{fontWeight:800, fontSize: "1.1em"}}>Stat Scatter — {LABELS.get(statX)||statX} vs {LABELS.get(statY)||statY}</div></div>
+        <div className="cardBody">
+          <Scatter
+            points={statScatterPoints}
+            xLabel={LABELS.get(statX)||statX}
+            yLabel={LABELS.get(statY)||statY}
+            q={searchQuery}
+            colorByPos
+            highlightName={player}
+            onPick={name => setPlayer(name && name.name ? name.name : (name || ""))}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------- Leaders / Best Roles / Stat Leaders ---------- */
+  function roleLeadersData(roleName, limit=30){
+    const arr = filteredRows
+      .map(r => ({ name:r["Name"], club: r["Club"], pos: (expandFMPositions(r["Pos"])[0]||""), score: roleScoreOfRow(r, roleName) }))
+      .filter(x => Number.isFinite(x.score))
+      .sort((a,b)=>b.score-a.score)
+      .slice(0, limit);
+    return arr;
+  }
+  function bestRolesData(limit=30){
+    const arr = filteredRows
+      .map(r => {
+        const br = bestRoleCache.get(r["Name"]) || { role:null, score:0 };
+        return { name:r["Name"], club:r["Club"], pos:(expandFMPositions(r["Pos"])[0]||""), role: br.role, score: br.score };
+      })
+      .filter(x => x.role && Number.isFinite(x.score))
+      .sort((a,b)=>b.score-a.score)
+      .slice(0, limit);
+    return arr;
+  }
+  function statLeadersData(stat, limit=30){
+    const arr = filteredRows
+      .map(r => ({ name:r["Name"], club:r["Club"], pos:(expandFMPositions(r["Pos"])[0]||""), v: numerify(getCell(r, stat)) }))
+      .filter(x => Number.isFinite(x.v))
+      .sort((a,b)=>b.v-a.v)
+      .slice(0, limit);
+    return arr;
+  }
+
+  function RoleLeadersMode(){
+    const leaders = roleLeadersData(role, 30);
+    const items = leaders.map(l => ({ label: `${l.name} — ${l.pos} • ${l.club||"—"}`, value: Number(l.score.toFixed(2)) }));
+    return (
+      <div className="card">
+        <div className="cardHead"><div style={{fontWeight:800}}>Role Leaders — {role}</div></div>
+        <div className="cardBody">
+          <HBar items={items} titleFmt={(v)=>v.toFixed(2)} valueMax={100}/>
+        </div>
+      </div>
+    );
+  }
+
+  function BestRolesMode(){
+    const bests = bestRolesData(30);
+    const items = bests.map(l => ({ label: `${l.name} — ${l.role}`, value: Number(l.score.toFixed(2)) }));
+    return (
+      <div className="card">
+        <div className="cardHead"><div style={{fontWeight:800}}>Best Roles — Top Scores</div></div>
+        <div className="cardBody"><HBar items={items} titleFmt={(v)=>v.toFixed(2)} valueMax={100}/></div>
+      </div>
+    );
+  }
+
+  function StatLeadersMode(){
+    const [localStat, setLocalStat] = useState(statX);
+    useEffect(()=>setLocalStat(statX),[statX]);
+    const leaders = statLeadersData(localStat, 30);
+    const items = leaders.map(l => ({ label: `${l.name} — ${l.pos} • ${l.club||"—"}`, value: Number(l.v.toFixed(2)) }));
+    return (
+      <div className="card">
+        <div className="cardHead" style={{gap:12}}>
+          <div style={{fontWeight:800}}>Stat Leaders</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <select className="input" value={localStat} onChange={(e)=>{ setLocalStat(e.target.value); setStatX(e.target.value); }}>
+              {allStats.map(s => <option key={s} value={s}>{LABELS.get(s)||s}</option>)}
+            </select>
           </div>
-          <button className="btn ghost" onClick={()=> setThemeName(themeName==="sleek"?"dusk": themeName==="dusk"?"light":"sleek")}>
-            Theme: {themeName}
-          </button>
-        </header>
+        </div>
+        <div className="cardBody">
+          <HBar items={items} titleFmt={(v)=>v.toFixed(2)} valueMax={Math.max(10, ...items.map(i=>i.value))}/>
+        </div>
+      </div>
+    );
+  }
 
-        <section className="playerBar">
-          <div className="playerHeader">
-            {me ? (
-              <>
-                <div className="phName">{me[nameCol]}</div>
-                <div className="phKpis">
-                  {headerKpis.map((k,i)=>(
-                    <div className="phKpi" key={i}><div className="k">{k.k}</div><div className="v">{k.v}</div></div>
-                  ))}
-                </div>
-              </>
-            ) : <div className="status">Select a player to see details.</div>}
-          </div>
-        </section>
+  /* ---------- Custom Archetype Mode ---------- */
+  function CustomArchetypeMode(){
+    const label = customName || "Custom Archetype";
+    const weights = customWeights;
+    const baseline = customBaseline;
 
-        <div className="wrap">
-          <aside className="side">
-            <section className="section">
-              <div className="sectionHead">Data</div>
-              <div className="sectionBody">
-                <div className="row">
-                  <input type="file" accept=".html,.htm,.csv" onChange={e=>onFile(e.target.files?.[0])}/>
-                </div>
-                <div className="status">Columns: {columns.length} • Rows: {rows.length.toLocaleString()}</div>
+    const leaders = filteredRows
+      .filter(r => sharesAny(expandFMPositions(r["Pos"]), baseline))
+      .map(r => ({ r, score: roleScoreFor(r, { weights, baseline }, pctIndex) }))
+      .map(x => ({ name:x.r["Name"], club:x.r["Club"], pos:(expandFMPositions(x.r["Pos"])[0]||""), score:x.score }))
+      .filter(x => Number.isFinite(x.score))
+      .sort((a,b)=>b.score-a.score)
+      .slice(0, 30);
+
+    const items = leaders.map(l => ({ label: `${l.name} — ${l.pos} • ${l.club||"—"}`, value: Number(l.score.toFixed(2)) }));
+
+    const toggleBaseline = (p) => {
+      setCustomBaseline(prev => prev.includes(p) ? prev.filter(x=>x!==p) : [...prev, p]);
+    };
+    const addStat = () => {
+      const pick = allStats.find(s => !(s in customWeights));
+      if (pick) setCustomWeights({...customWeights, [pick]: 1.0});
+    };
+    const removeStat = (s) => {
+      const next = {...customWeights}; delete next[s]; setCustomWeights(next);
+    };
+
+    return (
+      <>
+        <div className="card">
+          <div className="cardHead"><div style={{fontWeight:800}}>Custom Archetype — Editor</div></div>
+          <div className="cardBody">
+            <div className="row" style={{gap:12, alignItems:"flex-start"}}>
+              <div className="col">
+                <label className="lbl">Name</label>
+                <input className="input" value={customName} onChange={e=>setCustomName(e.target.value)} />
               </div>
-            </section>
-
-            <section className="section">
-              <div className="sectionHead">Filters</div>
-              <div className="sectionBody">
-                <label className="lbl">Positions (14 treated individually)</label>
+              <div className="col">
+                <label className="lbl">Baseline positions</label>
                 <div className="chipRow">
                   {POS14.map(p => (
-                    <button key={p} className={`chip ${posCohort.includes(p)?"active":""}`}
-                      onClick={()=> setPosCohort(posCohort.includes(p) ? posCohort.filter(x=>x!==p) : [...posCohort, p]) }>
-                      {p}
-                    </button>
+                    <button key={p} className={`chip ${customBaseline.includes(p)?"active":""}`} onClick={()=>toggleBaseline(p)}>{p}</button>
                   ))}
                 </div>
-                <div className="row">
-                  <div className="col">
-                    <label className="lbl">Min minutes</label>
-                    <input className="input" type="number" value={minMinutes} onChange={e=>setMinMinutes(Number(e.target.value)||0)} />
-                  </div>
-                  <div className="col">
-                    <label className="lbl">Max age</label>
-                    <input className="input" type="number" value={maxAge} onChange={e=>setMaxAge(Number(e.target.value)||60)} />
-                  </div>
-                </div>
-                <label className="lbl">Search (name)</label>
-                <input className="input" placeholder="Find a player…" value={search} onChange={e=>setSearch(e.target.value)} />
               </div>
-            </section>
+            </div>
 
-            <section className="section">
-              <div className="sectionHead">Selections</div>
-              <div className="sectionBody">
+            <div style={{marginTop:10}}>
+              <div className="row" style={{alignItems:"center"}}>
+                <div style={{fontWeight:700}}>Stats & weights</div>
+                <button className="btn ghost tight" style={{marginLeft:"auto"}} onClick={addStat}>+ Add stat</button>
+              </div>
+              {Object.keys(customWeights).map(s => (
+                <div key={s} className="row">
+                  <div className="col">
+                    <select className="input" value={s} onChange={(e)=>{
+                      const val = e.target.value;
+                      const w = customWeights[s];
+                      const next = {...customWeights}; delete next[s]; next[val] = w; setCustomWeights(next);
+                    }}>
+                      {allStats.map(st => <option key={st} value={st}>{LABELS.get(st)||st}</option>)}
+                    </select>
+                  </div>
+                  <div style={{width:120}}>
+                    <input className="input" type="number" step="0.1" value={customWeights[s]}
+                      onChange={(e)=> setCustomWeights({...customWeights, [s]: Number(e.target.value)||0})}/>
+                  </div>
+                  <button className="btn ghost alt tight" onClick={()=>removeStat(s)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="cardHead"><div style={{fontWeight:800}}>Custom Archetype — Leaders ({label})</div></div>
+          <div className="cardBody">
+            <HBar items={items} titleFmt={(v)=>v.toFixed(2)} valueMax={100}/>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  /* ---------- Config Mode ---------- */
+  function ConfigMode(){
+    return (
+      <>
+        <div className="card">
+          <div className="cardHead"><div style={{fontWeight:800}}>Configuration Center</div></div>
+          <div className="cardBody">
+            <div className="row" style={{gap:24, alignItems:"flex-start"}}>
+              <div className="col">
+                <h3 style={{margin:"0 0 16px 0", color:"var(--accent)"}}>Selection Controls</h3>
+                
                 <label className="lbl">Archetype</label>
                 <select className="input" value={role} onChange={e=>setRole(e.target.value)}>
                   {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
-                <label className="lbl">Player</label>
-                <select className="input" value={player} onChange={e=>setPlayer(e.target.value)}>
-                  {players.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
+
                 <label className="lbl">Matrix roles</label>
                 <select className="input" value={roleX} onChange={e=>setRoleX(e.target.value)}>
                   {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
@@ -1434,20 +2123,359 @@ function PlayerProfileMode() {
                 <select className="input" value={roleY} onChange={e=>setRoleY(e.target.value)}>
                   {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
-              </div>
-            </section>
-          </aside>
 
+                <label className="lbl">Scatter stats</label>
+                <select className="input" value={statX} onChange={e=>setStatX(e.target.value)}>
+                  {allStats.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                </select>
+                <select className="input" value={statY} onChange={e=>setStatY(e.target.value)}>
+                  {allStats.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                </select>
+              </div>
+
+              <div className="col">
+                <h3 style={{margin:"0 0 16px 0", color:"var(--accent)"}}>Value Model Configuration</h3>
+                
+                <div className="row">
+                  <div className="col">
+                    <label className="lbl">Buy Discount (0–1)</label>
+                    <input className="input" type="number" step="0.01" min="0" max="1"
+                      value={safeValueCfg.buyDiscount}
+                      onChange={e => setValueCfg({...valueCfg, buyDiscount: Math.max(0, Math.min(1, Number(e.target.value)||0.95))})}/>
+                  </div>
+                </div>
+
+                <div className="row">
+                  <div className="col">
+                    <label className="lbl">Score Power (dampen)</label>
+                    <input className="input" type="number" step="0.05" min="0.5" max="2"
+                      value={safeValueCfg.scorePower}
+                      onChange={e => setValueCfg({...valueCfg, scorePower: Number(e.target.value)||1.00})}/>
+                  </div>
+                  <div className="col">
+                    <label className="lbl">Min Minutes Ref</label>
+                    <input className="input" type="number" step="60"
+                      value={safeValueCfg.minMinutesRef}
+                      onChange={e => setValueCfg({...valueCfg, minMinutesRef: Math.max(60, Number(e.target.value)||1800)})}/>
+                  </div>
+                </div>
+
+                <label className="lbl">League Weights</label>
+                <div className="row">
+                  {["elite","strong","solid","growth","develop"].map(k=>(
+                    <div className="col" key={k}>
+                      <div className="lbl" style={{marginBottom:6}}>{k}</div>
+                      <input className="input" type="number" step="0.05" min="0.2" max="1.6"
+                        value={safeValueCfg.leagueWeights[k]}
+                        onChange={e => setValueCfg({
+                          ...valueCfg,
+                          leagueWeights: { ...(valueCfg.leagueWeights||{}), [k]: Number(e.target.value)||safeValueCfg.leagueWeights[k] }
+                        })}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <label className="lbl" style={{marginTop:8}}>Wage Settings</label>
+                <div className="row">
+                  <div className="col">
+                    <div className="lbl">£/wk per £1m TV</div>
+                    <input className="input" type="number" step="50" min="1000" max="10000"
+                      value={safeValueCfg.wagePerM}
+                      onChange={e=>setValueCfg({...valueCfg, wagePerM: Number(e.target.value)||safeValueCfg.wagePerM})}/>
+                  </div>
+                  <div className="col">
+                    <div className="lbl">Max Wage Mult</div>
+                    <input className="input" type="number" step="0.01" min="1" max="2"
+                      value={safeValueCfg.wageMaxMult}
+                      onChange={e=>setValueCfg({...valueCfg, wageMaxMult: Math.max(1, Number(e.target.value)||safeValueCfg.wageMaxMult)})}/>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div style={{marginTop:24, padding:16, background:"var(--cardBg)", borderRadius:8, border:"1px solid var(--cardBorder)"}}>
+              <div style={{fontSize:14, color:"var(--muted)"}}>
+                Configuration changes are applied immediately. Use the sidebar for quick filters and player selection, 
+                then return to other modes to see your data visualizations.
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  /* ---------- Player Finder (no results until Apply) ---------- */
+  function PlayerFinderMode(){
+    const [pfRole, setPfRole] = useStickyState("pf:role", role);
+    const [pfMinScore, setPfMinScore] = useStickyState("pf:minScore", 70);
+    const [pfUseStat, setPfUseStat] = useStickyState("pf:useStat", statX || allStats[0] || "");
+    const [pfMinStat, setPfMinStat] = useStickyState("pf:minStat", 0);
+    const [pfUnderratedOnly, setPfUnderratedOnly] = useStickyState("pf:underratedOnly", false);
+    const [pfUnderratedMargin, setPfUnderratedMargin] = useStickyState("pf:underratedMargin", 0.15);
+
+    // If user hasn't applied search/filters, show prompt (and avoid heavy computation)
+    if (!searchApplied) {
+      return (
+        <div className="card">
+          <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
+            <div style={{fontWeight:800}}>Player Finder</div>
+          </div>
+          <div className="cardBody">
+            <div style={{padding:24, textAlign:"center"}}>
+              <div style={{fontSize:16, fontWeight:700, marginBottom:8}}>No results yet</div>
+              <div className="status" style={{marginBottom:12}}>Adjust your filters (role / thresholds) and apply a search to run the finder.</div>
+              <div style={{display:"flex", justifyContent:"center", gap:8}}>
+                <button className="btn ghost tight" onClick={clearSearch}>Clear</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // computed rows (only when searchApplied)
+    const rowsPF = useMemo(() => {
+      return filteredRows.map(r => {
+        const name = r["Name"];
+        const br = bestRoleCache.get(name) || { role:null, score:0 };
+        const rk = bestRoleRank(name);
+        const tv = trueValue(name);
+        const ba = buyAt(name);
+        const fw = fairWage(name);
+        const mw = maxWage(name);
+        const currW = wageWeeklyOf(r);
+        const gameMid = parseMoneyRange(getCell(r,"Transfer Value")||"").mid;
+        const scoreInRole = roleScoreOfRow(r, pfRole);
+        const statVal = numerify(getCell(r, pfUseStat));
+        const undervalued = Number.isFinite(gameMid) ? (tv > gameMid * (1 + pfUnderratedMargin)) : false;
+
+        return {
+          name, club: r["Club"], pos: r["Pos"], mins: numerify(r["Minutes"]),
+          age: numerify(r["Age"]), bestRole: br.role, bestScore: br.score,
+          scoreInRole, statVal, rankText: (Number.isFinite(rk.rank)? `#${rk.rank}/${rk.of}` : "—"),
+          tv, ba, fw, mw, currW, gameMid, undervalued
+        };
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filteredRows, bestRoleCache, pfRole, pfUseStat, pfUnderratedMargin, trueValue, buyAt, fairWage, maxWage, roleScoreOfRow, wageWeeklyOf]);
+
+    const rowsFiltered = useMemo(() => {
+      return rowsPF.filter(p => {
+        const scoreOk = !Number.isFinite(pfMinScore) ? true : (Number.isFinite(p.scoreInRole) ? p.scoreInRole >= pfMinScore : false);
+        const statOk  = !Number.isFinite(pfMinStat)  ? true : (Number.isFinite(p.statVal)  ? p.statVal >= pfMinStat  : false);
+        const uvOk = pfUnderratedOnly ? (p.undervalued && Number.isFinite(p.gameMid)) : true;
+        return scoreOk && statOk && uvOk;
+      }).sort((a,b)=>{
+        if (pfUnderratedOnly) {
+          const aDelta = Number.isFinite(a.gameMid)? (a.tv - a.gameMid) : -Infinity;
+          const bDelta = Number.isFinite(b.gameMid)? (b.tv - b.gameMid) : -Infinity;
+          return bDelta - aDelta;
+        }
+        return (b.scoreInRole - a.scoreInRole) || (b.bestScore - a.bestScore);
+      });
+    }, [rowsPF, pfMinScore, pfMinStat, pfUnderratedOnly]);
+
+    return (
+      <div className="card">
+        <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
+          <div style={{fontWeight:800}}>Player Finder</div>
+          <div className="row" style={{gap:8, flexWrap:"wrap"}}>
+            <div style={{width:220}}>
+              <label className="lbl">Filter by role score</label>
+              <select className="input" value={pfRole} onChange={e=>setPfRole(e.target.value)}>
+                {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </div>
+            <div style={{width:160}}>
+              <label className="lbl">Min role score</label>
+              <input className="input" type="number" step="1" min="0" max="100"
+                value={pfMinScore} onChange={(e)=>setPfMinScore(Number(e.target.value)||0)} />
+            </div>
+            <div style={{width:260}}>
+              <label className="lbl">Stat threshold</label>
+              <div className="row" style={{gap:8}}>
+                <select className="input" value={pfUseStat} onChange={e=>setPfUseStat(e.target.value)}>
+                  {allStats.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                </select>
+                <input className="input" style={{width:120}} type="number" step="0.01"
+                  value={pfMinStat} onChange={(e)=>setPfMinStat(Number(e.target.value)||0)} />
+              </div>
+            </div>
+            <div style={{display:"flex", alignItems:"center", gap:8}}>
+              <label className="lbl" style={{margin:0}}>Only Underrated</label>
+              <input type="checkbox" checked={pfUnderratedOnly} onChange={(e)=>setPfUnderratedOnly(e.target.checked)} />
+            </div>
+            <div style={{width:160}}>
+              <label className="lbl">Underrated margin</label>
+              <input className="input" type="number" step="0.01" min="0" max="1"
+                value={pfUnderratedMargin} onChange={(e)=>setPfUnderratedMargin(Math.max(0, Math.min(1, Number(e.target.value)||0.15)))} />
+            </div>
+          </div>
+        </div>
+
+        <div className="cardBody scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th><th>Club</th><th>Pos</th><th>Age</th><th>Minutes</th>
+                <th>Best Role</th><th>Best Score</th><th>{pfRole} Score</th><th>{LABELS.get(pfUseStat)||pfUseStat}</th>
+                <th>Game Value</th><th>True Value</th><th>Delta</th><th>Buy At</th>
+                <th>Curr Wage</th><th>Fair Wage</th><th>Max Wage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rowsFiltered.map((p,i)=>(
+                <tr key={i} style={{cursor:"default"}}>
+                  <td>{p.name}</td>
+                  <td>{p.club||"—"}</td>
+                  <td>{p.pos||"—"}</td>
+                  <td>{Number.isFinite(p.age)? tf(p.age,0):"—"}</td>
+                  <td>{Number.isFinite(p.mins)? tf(p.mins,0):"—"}</td>
+                  <td>{p.bestRole||"—"}</td>
+                  <td>{Number.isFinite(p.bestScore)? tf(p.bestScore,2) : "—"}</td>
+                  <td>{Number.isFinite(p.scoreInRole)? tf(p.scoreInRole,2) : "—"}</td>
+                  <td>{Number.isFinite(p.statVal)? tf(p.statVal,2) : "—"}</td>
+                  <td>{Number.isFinite(p.gameMid)? money(p.gameMid) : "—"}</td>
+                  <td>{money(p.tv)}</td>
+                  <td style={{color: Number.isFinite(p.gameMid) && (p.tv - p.gameMid) > 0 ? "var(--accent2)" : "var(--ink)"}}>
+                    {Number.isFinite(p.gameMid)? money(p.tv - p.gameMid) : "—"}
+                  </td>
+                  <td>{money(p.ba)}</td>
+                  <td>{Number.isFinite(p.currW)? money(p.currW)+"/wk" : "—"}</td>
+                  <td>{money(p.fw)}/wk</td>
+                  <td>{money(p.mw)}/wk</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{display:"flex", gap:8, marginTop:10, alignItems:"center"}}>
+            <div style={{flex:1}}>
+              <div className="status">Search only applies on Enter or Apply — it will not filter while you type.</div>
+            </div>
+            <div style={{display:"flex", gap:8}}>
+              <button className="btn ghost tight" onClick={() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))}>Apply</button>
+              <button className="btn ghost tight" onClick={clearSearch}>Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------- Sidebar ---------- */
+  function Sidebar(){
+    return (
+      <aside className="side">
+        <section className="section">
+          <div className="sectionHead">Data</div>
+          <div className="sectionBody">
+            <input type="file" accept=".csv,.html,.htm" onChange={handleFile}/>
+            <div className="status">{status}</div>
+          </div>
+        </section>
+
+        <section className="section">
+          <div className="sectionHead">Filters</div>
+          <div className="sectionBody">
+            <label className="lbl">Positions (14 treated individually)</label>
+            <div className="chipRow">
+              {POS14.map(p => (
+                <button key={p} className={`chip ${posCohort.includes(p)?"active":""}`}
+                  onClick={()=> setPosCohort(posCohort.includes(p) ? posCohort.filter(x=>x!==p) : [...posCohort, p]) }>
+                  {p}
+                </button>
+              ))}
+            </div>
+            <div className="row">
+              <div className="col">
+                <label className="lbl">Min minutes</label>
+                <input className="input" type="number" value={minMinutes}
+                  onChange={e=>setMinMinutes(Number(e.target.value)||0)} />
+              </div>
+              <div className="col">
+                <label className="lbl">Max age</label>
+                <input className="input" type="number" value={maxAge}
+                  onChange={e=>setMaxAge(Number(e.target.value)||60)} />
+              </div>
+            </div>
+
+            <label className="lbl">Search (name / club / pos) — press Enter to apply</label>
+            <div className="row">
+              <SearchInput
+                className="input"
+                placeholder="Type name, club or pos…"
+                initialValue={searchQuery}
+                onSearch={handleSearch}
+              />
+              <button className="btn ghost tight" onClick={clearSearch}>Clear</button>
+            </div>
+          </div>
+        </section>
+
+        <section className="section">
+          <div className="sectionHead">Quick Settings</div>
+          <div className="sectionBody">
+            <label className="lbl">Computation scope (percentiles)</label>
+            <select className="input" value={compScope} onChange={e=>setCompScope(e.target.value)}>
+              {SCOPE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+
+            <label className="lbl">Player</label>
+            <select className="input" value={player} onChange={e=>setPlayer(e.target.value)} style={{whiteSpace: "nowrap", textOverflow: "ellipsis"}}>
+              {players.map(p => <option key={p} value={p} title={p}>{p}</option>)}
+            </select>
+            
+            <button className="btn" onClick={()=>setMode("Config")} style={{marginTop:"16px", width:"100%"}}>
+              Advanced Configuration →
+            </button>
+          </div>
+        </section>
+      </aside>
+    );
+  }
+
+  /* ---------- Topbar ---------- */
+  function Topbar(){
+    const modes = ["Player Profile","Radar","Percentiles","Role Matrix","Stat Scatter","Role Leaders","Best Roles","Stat Leaders","Custom Archetype","Config"];
+    return (
+      <div className="topbar">
+        <div className="brand">ScoutView</div>
+        <div className="tabs">
+          {modes.map(m => (
+            <button key={m} className={`tab ${mode===m?"active":""}`} onClick={()=>setMode(m)}>{m}</button>
+          ))}
+        </div>
+        <div className="spacer"/>
+        <div className="seg">
+          {Object.keys(THEMES).map(t => (
+            <button key={t} className={`segBtn ${themeName===t?"active":""}`} onClick={()=>setThemeName(t)}>{t}</button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------- Layout ---------- */
+  return (
+    <ErrorBoundary>
+      <div className="app">
+        <Topbar/>
+        <div className="wrap">
+          <Sidebar/>
           <main className="main">
             {mode==="Player Profile" && <PlayerProfileMode/>}
             {mode==="Radar" && <RadarMode/>}
             {mode==="Percentiles" && <PercentilesMode/>}
             {mode==="Role Matrix" && <RoleMatrixMode/>}
             {mode==="Stat Scatter" && <StatScatterMode/>}
-            {mode==="Player Finder" && <PlayerFinderMode/>}
-            {mode==="Best Roles" && <BestRolesMode/>}
             {mode==="Role Leaders" && <RoleLeadersMode/>}
+            {mode==="Best Roles" && <BestRolesMode/>}
             {mode==="Stat Leaders" && <StatLeadersMode/>}
+            {mode==="Custom Archetype" && <CustomArchetypeMode/>}
+            {mode==="Config" && <ConfigMode/>}
           </main>
         </div>
       </div>
@@ -1455,4 +2483,4 @@ function PlayerProfileMode() {
   );
 }
 
-/* Player Profile is defined within App above (JSX fragment with Radar + Scatter) */
+/* ===================== (end PART 2/2) ===================== */
