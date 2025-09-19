@@ -946,28 +946,18 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex }) => {
           theme: localStorage.getItem('ui:theme') || 'sleek'
         };
         
-  // Dev vs Prod routing
-  const isProd = typeof window !== 'undefined' && !/localhost|127\.0\.0\.1/i.test(window.location.hostname);
-  const urlPrimary = isProd ? '/api/pizza' : 'http://localhost:8000/pizza/base64';
-  const urlFallback = isProd ? 'http://localhost:8000/pizza/base64' : '/api/pizza';
+        // Dev vs Prod routing (never call localhost in prod)
+        const isProd = (
+          (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.PROD === true) ||
+          (typeof window !== 'undefined' && !/localhost|127\.0\.0\.1/i.test(window.location.hostname))
+        );
+        const endpoint = isProd ? '/api/pizza' : 'http://localhost:8000/pizza/base64';
 
-        let response;
-        try {
-          response = await fetch(urlPrimary, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestData)
-          });
-        } catch {}
-        if (!response || !response.ok) {
-          try {
-            response = await fetch(urlFallback, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(requestData)
-            });
-          } catch {}
-        }
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestData)
+        });
 
         if (!response.ok) {
           throw new Error(`API request failed: ${response.status}`);

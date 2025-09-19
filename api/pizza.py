@@ -1,135 +1,109 @@
 from http.server import BaseHTTPRequestHandler
 import json
-import io
 import base64
-import numpy as np
-import pandas as pd
+import math
+import os
 
-# Import matplotlib and mplsoccer
-try:
-    import matplotlib
-    matplotlib.use('Agg')  # Use non-interactive backend
-    import matplotlib.pyplot as plt
-    from matplotlib import font_manager as fm
-    from mplsoccer import PyPizza
-    import os
-    
-    # Load Gabarito font if available (check multiple locations + env var)
-    try:
-        root_dir = os.path.dirname(os.path.dirname(__file__))
-        candidates = [
-            os.path.join(root_dir, 'Gabarito.ttf'),
-            os.path.join(os.path.dirname(__file__), 'Gabarito.ttf'),
-            os.environ.get('GABARITO_TTF', ''),
-        ]
-        font_path = next((p for p in candidates if p and os.path.exists(p)), None)
-        if font_path:
-            fm.fontManager.addfont(font_path)
-            font_normal = fm.FontProperties(fname=font_path, weight='normal')
-            font_bold = fm.FontProperties(fname=font_path, weight='bold')
-        else:
-            font_normal = fm.FontProperties(weight='normal')
-            font_bold = fm.FontProperties(weight='bold')
-    except Exception:
-        font_normal = fm.FontProperties(weight='normal')
-        font_bold = fm.FontProperties(weight='bold')
-    
-    HAS_DEPS = True
-except ImportError:
-    HAS_DEPS = False
-    font_normal = None
-    font_bold = None
-
-def create_pizza_chart(player_data, light_theme=True):
-    if not HAS_DEPS:
-        return None
-    
-    # Accept multiple possible keys for labels/params from different clients
-    stat_cols = (
+def create_pizza_svg(player_data, light_theme=True):
+    # labels
+    labels = (
         player_data.get('stat_labels')
         or player_data.get('labels')
         or player_data.get('params')
         or []
     )
-    if not stat_cols:
+    if not labels:
         return None
-    
-    pcts = []
-    raw_vals = []
-    
+
+    # values
     perc_map = (
         player_data.get('percentiles')
         or player_data.get('pcts')
         or player_data.get('values_map')
         or {}
     )
-    stats_map = player_data.get('stats') or player_data.get('raw_stats') or {}
+    raw_map = player_data.get('stats') or player_data.get('raw_stats') or {}
 
-    for stat in stat_cols:
+    pcts = []
+    raws = []
+    for stat in labels:
         pct = perc_map.get(stat, 0.0)
-        val = stats_map.get(stat, np.nan)
-        
-        pcts.append(float(np.clip(pct, 0.0, 100.0)))
-        raw_vals.append(None if pd.isna(val) else float(val))
-    
-    slice_colors = ["#2E4374", "#1A78CF", "#D70232", "#FF9300", "#44C3A1",
-                    "#CA228D", "#E1C340", "#7575A9", "#9DDFD3"] * 6
-    slice_colors = slice_colors[:len(stat_cols)]
-    text_colors = ["#000000"] * len(slice_colors)
-    
-    # Colors per theme
-    param_color = "#000000" if light_theme else "#ffffff"
-    value_txt_color = "#000000" if light_theme else "#ffffff"
-    
-    baker = PyPizza(
-        params=stat_cols,
-        background_color="none",  # Transparent background
-        straight_line_color="#000000",
-        straight_line_lw=0.3,
-        last_circle_color="#000000",
-        last_circle_lw=1,
-        other_circle_lw=0,
-        inner_circle_size=0.30
-    )
-    
-    def _fmt_val(x):
-        if x is None or pd.isna(x): 
-            return None
-        if float(x).is_integer():
-            return int(round(float(x)))
-        return round(float(x), 2)
-    
-    fig, ax = baker.make_pizza(
-        pcts,
-        alt_text_values=[_fmt_val(v) for v in raw_vals],
-        figsize=(10, 10),
-        color_blank_space="same",
-        slice_colors=slice_colors,
-        value_colors=text_colors,
-        value_bck_colors=slice_colors,
-        blank_alpha=0.40,
-        kwargs_slices=dict(edgecolor="#000000", zorder=2, linewidth=1),
-        kwargs_params=dict(color=param_color, fontsize=13, va="center", fontproperties=font_normal),
-        kwargs_values=dict(
-            color=value_txt_color,
-            fontsize=12,
-            fontproperties=font_normal,
-            zorder=3,
-            bbox=dict(edgecolor="#000000", facecolor="cornflowerblue",
-                      boxstyle="round,pad=0.16", lw=1)
-        ),
-    )
-    
-    ax.set_position([0.02, 0.02, 0.96, 0.96])
-    
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', 
-                facecolor='none', edgecolor='none', transparent=True)
-    plt.close(fig)
-    buf.seek(0)
-    
-    return buf.getvalue()
+        try:
+            pct = float(pct)
+        except Exception:
+            pct = 0.0
+        if pct < 0: pct = 0.0
+        if pct > 100: pct = 100.0
+        pcts.append(pct)
 
+        v = raw_map.get(stat, None)
+        try:
+            vv = float(v)
+            if math.isnan(vv): vv = None
+            else: vv = vv
+        except Exception:
+            vv = None
+        raws.append(vv)
+
+    # basic geometry
+    n = len(labels)
+    cx, cy = 250, 250
+    R0 = 40    # inner radius
+    R = 190    # variable max radius
+    labelR = 220
+    guideRs = [R0 + (R-R0) * t for t in (0.25, 0.5, 0.75, 1.0)]
+    start_angle = -math.pi/2
+
+    # palette and text color
+    palette = ["#2E4374", "#1A78CF", "#D70232", "#FF9300", "#44C3A1",
+               "#CA228D", "#E1C340", "#7575A9", "#9DDFD3"]
+    colors = [palette[i % len(palette)] for i in range(n)]
+    ink = "#000000" if light_theme else "#ffffff"
+
+    def pol(r, ang):
+        return (cx + r*math.cos(ang), cy + r*math.sin(ang))
+
+    def arc_path(r, a0, a1):
+        x0, y0 = pol(r, a0)
+        x1, y1 = pol(r, a1)
+        large = 1 if (a1 - a0) % (2*math.pi) > math.pi else 0
+        return f"A {r:.1f} {r:.1f} 0 {large} 1 {x1:.1f} {y1:.1f}"
+
+    # build SVG elements
+    parts = []
+    parts.append(f"<svg xmlns='http://www.w3.org/2000/svg' width='500' height='500' viewBox='0 0 500 500' style='background:transparent'>")
+    parts.append("<defs><style>")
+    parts.append("text{font-family:Gabarito,Inter,system-ui,Segoe UI,Arial,sans-serif}")
+    parts.append("</style></defs>")
+
+    # guides
+    for gr in guideRs:
+        parts.append(f"<circle cx='{cx}' cy='{cy}' r='{gr:.1f}' fill='none' stroke='{ink}' stroke-opacity='0.18' stroke-width='1'/>")
+
+    # slices
+    for i, (pct, col) in enumerate(zip(pcts, colors)):
+        a0 = start_angle + i * (2*math.pi / n)
+        a1 = start_angle + (i+1) * (2*math.pi / n)
+        r = R0 + (R - R0) * (pct / 100.0)
+        # wedge path: center -> edge at a0 -> arc to a1 -> back to center
+        x0, y0 = pol(r, a0)
+        path = [f"M {cx:.1f} {cy:.1f}", f"L {x0:.1f} {y0:.1f}", arc_path(r, a0, a1), f"L {cx:.1f} {cy:.1f} Z"]
+        parts.append(f"<path d='{' '.join(path)}' fill='{col}' fill-opacity='0.85' stroke='{ink}' stroke-opacity='0.35' stroke-width='1' />")
+
+    # labels and values
+    for i, (label, pct, val) in enumerate(zip(labels, pcts, raws)):
+        a = start_angle + (i + 0.5) * (2*math.pi / n)
+        lx, ly = pol(labelR, a)
+        anchor = 'start' if math.cos(a) > 0.25 else ('end' if math.cos(a) < -0.25 else 'middle')
+        parts.append(f"<text x='{lx:.1f}' y='{ly:.1f}' fill='{ink}' font-size='12' text-anchor='{anchor}' dominant-baseline='middle'>{label}</text>")
+        # value text slightly inward
+        vx, vy = pol(R0 + (R - R0) * (pct/100.0) * 0.72, a)
+        if val is not None:
+            sval = (str(int(round(val))) if float(val).is_integer() else f"{val:.2f}")
+            parts.append(f"<text x='{vx:.1f}' y='{vy:.1f}' fill='{ink}' font-size='11' text-anchor='middle' dominant-baseline='middle'>{sval}</text>")
+
+    parts.append("</svg>")
+    return "".join(parts)
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
@@ -155,12 +129,12 @@ class handler(BaseHTTPRequestHandler):
                     t = theme_val.lower()
                     # Treat 'sleek' and 'dusk' as dark modes
                     light_theme = t in ('light', 'day', 'default')
-            
-            png_bytes = create_pizza_chart(player_data, light_theme)
-            
-            if png_bytes:
-                b64_string = base64.b64encode(png_bytes).decode('utf-8')
-                response = {"image": f"data:image/png;base64,{b64_string}"}
+
+            svg = create_pizza_svg(player_data, light_theme)
+
+            if svg:
+                b64_string = base64.b64encode(svg.encode('utf-8')).decode('utf-8')
+                response = {"image": f"data:image/svg+xml;base64,{b64_string}"}
                 
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
