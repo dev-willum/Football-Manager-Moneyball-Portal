@@ -1,0 +1,6 @@
+numpy>=1.26.0
+pandas>=2.2.0
+matplotlib>=3.8.0
+mplsoccer>=1.0.9
+Pillow>=10.0.0
+fonttools>=4.42.0

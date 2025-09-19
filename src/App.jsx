@@ -61,7 +61,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-/* ===================== Theme (Gabarito everywhere) ===================== */
+
 const THEMES = {
   sleek: { bg:"#0b1220", ink:"#e8eaed", muted:"#9aa7c2", card:"rgba(12,18,32,0.72)", cardBorder:"#1e2a45", chip:"#0f1a2f", chipActive:"#4ea1ff", accent:"#7aa2ff", accent2:"#00c2a8", axisInk:"#c7d2fe", quadFill:"rgba(122,162,255,0.10)", ring:"#32406b" },
   dusk:  { bg:"#0e1224", ink:"#f1f4f9", muted:"#a9b5cf", card:"rgba(18,22,40,0.74)", cardBorder:"#263154", chip:"#141b33", chipActive:"#7aa2ff", accent:"#9bb6ff", accent2:"#ff7d8a", axisInk:"#d6e0ff", quadFill:"rgba(155,182,255,0.10)", ring:"#3a4a7d" },
@@ -79,13 +79,6 @@ const POS_BASE_TO_CENTER = { ST:"ST (C)", M:"M (C)", AM:"AM (C)", D:"D (C)" };
 
 function CSS(theme, themeName){
   return `
-@font-face{
-  font-family:'GabaritoLocal';
-  src:url('/Gabarito-VariableFont_wght.ttf') format('truetype');
-  font-weight:600 800;
-  font-style:normal;
-  font-display:swap;
-}
 @import url('https://fonts.googleapis.com/css2?family=Gabarito:wght@600;800&family=Inter:wght@400;600;700;800&display=swap');
 :root{
   --bg:${theme.bg}; --ink:${theme.ink}; --muted:${theme.muted};
@@ -99,7 +92,7 @@ html,body,#root{ height:100%; }
 body{
   margin:0; color:var(--ink);
   background: radial-gradient(1200px 800px at 20% -20%, ${themeName==="sleek"?"#141d2b": themeName==="dusk" ? "#141833" : "#ffffff"} 0%, var(--bg) 60%, var(--bg) 100%);
-  font-family: GabaritoLocal, Gabarito, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
+  font-family: Gabarito, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
   font-size: 15px;
 }
 .app{ display:flex; flex-direction:column; min-height:100vh; }
@@ -935,7 +928,7 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex }) => {
           statLabels.push(stat);
         });
 
-        const requestData = {
+  const requestData = {
           player: {
             name: playerName,
             club: getCell(playerData, "Club") || "",
@@ -949,17 +942,32 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex }) => {
             stat_labels: statLabels
           },
           title: `vs ${compScope}`,
-          light_theme: true
+          light_theme: (typeof window !== 'undefined') ? (document.documentElement?.style?.getPropertyValue('--bg') ? (['light'].includes((localStorage.getItem('ui:theme')||'sleek'))) : true) : true,
+          theme: localStorage.getItem('ui:theme') || 'sleek'
         };
+        
+  // Dev vs Prod routing
+  const isProd = typeof window !== 'undefined' && !/localhost|127\.0\.0\.1/i.test(window.location.hostname);
+  const urlPrimary = isProd ? '/api/pizza' : 'http://localhost:8000/pizza/base64';
+  const urlFallback = isProd ? 'http://localhost:8000/pizza/base64' : '/api/pizza';
 
-        // Call FastAPI service
-        const response = await fetch('http://localhost:8000/pizza/base64', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestData)
-        });
+        let response;
+        try {
+          response = await fetch(urlPrimary, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestData)
+          });
+        } catch {}
+        if (!response || !response.ok) {
+          try {
+            response = await fetch(urlFallback, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestData)
+            });
+          } catch {}
+        }
 
         if (!response.ok) {
           throw new Error(`API request failed: ${response.status}`);
