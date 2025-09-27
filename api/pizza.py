@@ -58,7 +58,23 @@ def create_pizza_svg(player_data, light_theme=True):
     palette = ["#2E4374", "#1A78CF", "#D70232", "#FF9300", "#44C3A1",
                "#CA228D", "#E1C340", "#7575A9", "#9DDFD3"]
     colors = [palette[i % len(palette)] for i in range(n)]
+    # Base ink: all text light on dark themes; dark on light theme
     ink = "#000000" if light_theme else "#ffffff"
+
+    # Utility: compute perceived luminance of hex color
+    def hex_to_rgb(h):
+        h = h.lstrip('#')
+        if len(h) == 3:
+            h = ''.join([c*2 for c in h])
+        try:
+            return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+        except Exception:
+            return (127, 127, 127)
+
+    def luminance_hex(h):
+        r, g, b = hex_to_rgb(h)
+        # sRGB luminance approximation
+        return 0.2126*(r/255) + 0.7152*(g/255) + 0.0722*(b/255)
 
     def pol(r, ang):
         return (cx + r*math.cos(ang), cy + r*math.sin(ang))
@@ -95,12 +111,23 @@ def create_pizza_svg(player_data, light_theme=True):
         a = start_angle + (i + 0.5) * (2*math.pi / n)
         lx, ly = pol(labelR, a)
         anchor = 'start' if math.cos(a) > 0.25 else ('end' if math.cos(a) < -0.25 else 'middle')
+        # Outer labels: follow theme ink (light on dark theme, dark on light theme)
         parts.append(f"<text x='{lx:.1f}' y='{ly:.1f}' fill='{ink}' font-size='12' text-anchor='{anchor}' dominant-baseline='middle'>{label}</text>")
         # value text slightly inward
         vx, vy = pol(R0 + (R - R0) * (pct/100.0) * 0.72, a)
         if val is not None:
             sval = (str(int(round(val))) if float(val).is_integer() else f"{val:.2f}")
-            parts.append(f"<text x='{vx:.1f}' y='{vy:.1f}' fill='{ink}' font-size='11' text-anchor='middle' dominant-baseline='middle'>{sval}</text>")
+            # Per-slice value text color: light text on dark slice, dark on light slice
+            slice_col = colors[i]
+            lum = luminance_hex(slice_col)
+            value_ink = '#ffffff' if lum < 0.5 else '#000000'
+            # If theme is light and slice is very light, nudge to darker ink for contrast
+            if light_theme and lum > 0.85:
+                value_ink = '#111111'
+            # If theme is dark and slice is very dark, keep it bright
+            if not light_theme and lum < 0.15:
+                value_ink = '#f5f7fa'
+            parts.append(f"<text x='{vx:.1f}' y='{vy:.1f}' fill='{value_ink}' font-size='11' text-anchor='middle' dominant-baseline='middle'>{sval}</text>")
 
     parts.append("</svg>")
     return "".join(parts)
@@ -127,7 +154,7 @@ class handler(BaseHTTPRequestHandler):
                 )
                 if isinstance(theme_val, str):
                     t = theme_val.lower()
-                    # Treat 'sleek' and 'dusk' as dark modes
+                    # Treat 'sleek' and 'dusk' as dark modes; light otherwise
                     light_theme = t in ('light', 'day', 'default')
 
             svg = create_pizza_svg(player_data, light_theme)

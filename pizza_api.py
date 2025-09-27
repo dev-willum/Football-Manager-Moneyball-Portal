@@ -90,7 +90,9 @@ def create_pizza_chart(request: PizzaRequest) -> bytes:
     slice_colors = ["#2E4374", "#1A78CF", "#D70232", "#FF9300", "#44C3A1",
                     "#CA228D", "#E1C340", "#7575A9", "#9DDFD3"] * 6
     slice_colors = slice_colors[:len(stat_cols)]
-    text_colors = ["#000000"] * len(slice_colors)
+    
+    # Make text colors white by default (better for dark themes), black only for light theme
+    text_colors = ["#ffffff" if not request.light_theme else "#000000"] * len(slice_colors)
     
     bg = "none"  # Transparent background
     # White text for dark themes (sleek/dusk), black for light
