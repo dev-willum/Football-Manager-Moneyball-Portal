@@ -2802,6 +2802,7 @@ export default function App(){
 
   /* ---------- Data ---------- */
   const [rows, setRows] = useState([]);
+  const [datasetColumns, setDatasetColumns] = useState([]);
   const [status, setStatus] = useState("Load a CSV or HTML table exported from your data source.");
 
   /* ---------- Filters ---------- */
@@ -2861,7 +2862,9 @@ export default function App(){
 
   const dbNumericStats = useMemo(() => {
     if (!rows.length) return [];
-    const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r || {}))));
+    const cols = datasetColumns.length
+      ? datasetColumns
+      : Array.from(new Set(rows.flatMap(r => Object.keys(r || {}))));
     const nonStatColumns = new Set([
       "Name", "Club", "League", "Pos", "Nat", "2nd Nat", "Based In", "Info",
       "Personality", "Media Handling", "Home-Grown Status", "Preferred Foot", "Expires"
@@ -2872,7 +2875,7 @@ export default function App(){
       out.push(col);
     }
     return out.sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
-  }, [rows]);
+  }, [rows, datasetColumns]);
 
   const metricBuilderOptions = useMemo(() => {
     return Array.from(new Set([...allStats, ...dbNumericStats]))
@@ -3075,12 +3078,19 @@ export default function App(){
           if (fallback) res = await parseCsvFile(file, { delimiter: fallback });
         }
         const rowsN = normalizeHeadersRowObjects(res.data || []);
+        const csvFields = (res?.meta?.fields || []).map(f => mapHeaderName(f)).filter(Boolean);
+        const inferred = Array.from(new Set(rowsN.flatMap(r => Object.keys(r || {}))));
+        const finalColumns = Array.from(new Set([...csvFields, ...inferred]));
+        setDatasetColumns(finalColumns);
         setRows(rowsN);
-        setStatus(`Loaded ${rowsN.length} rows. Player names normalized (accents removed).`);
+        setStatus(`Loaded ${rowsN.length} rows, ${finalColumns.length} columns. Player names normalized (accents removed).`);
       } else if (ext === "html" || ext === "htm") {
         const rowsN = await parseHtmlTable(file);
-        setRows(normalizeHeadersRowObjects(rowsN));
-        setStatus(`Loaded ${rowsN.length} rows from HTML table. Player names normalized (accents removed).`);
+        const normalizedRows = normalizeHeadersRowObjects(rowsN);
+        const finalColumns = Array.from(new Set(normalizedRows.flatMap(r => Object.keys(r || {}))));
+        setDatasetColumns(finalColumns);
+        setRows(normalizedRows);
+        setStatus(`Loaded ${rowsN.length} rows, ${finalColumns.length} columns from HTML table. Player names normalized (accents removed).`);
       } else {
         setStatus("Unsupported file. Please load CSV or HTML.");
       }
