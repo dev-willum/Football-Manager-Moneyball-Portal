@@ -341,6 +341,61 @@ const numerify = (v) => {
   return Number.isFinite(num) ? num * mult : NaN;
 };
 
+const CUSTOM_METRIC_OPERATIONS = [
+  { value: "add", label: "A + B" },
+  { value: "subtract", label: "A - B" },
+  { value: "multiply", label: "A * B" },
+  { value: "divide", label: "A / B" },
+  { value: "average", label: "(A + B) / 2" }
+];
+
+const CUSTOM_METRIC_SYMBOL = {
+  add: "+",
+  subtract: "-",
+  multiply: "*",
+  divide: "/",
+  average: "avg"
+};
+
+function applyCustomMetricOperation(operation, a, b) {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return NaN;
+  switch (operation) {
+    case "add": return a + b;
+    case "subtract": return a - b;
+    case "multiply": return a * b;
+    case "divide": return b === 0 ? NaN : a / b;
+    case "average": return (a + b) / 2;
+    default: return NaN;
+  }
+}
+
+function normalizeCustomMetrics(metrics) {
+  if (!Array.isArray(metrics)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const m of metrics) {
+    const name = strip(m?.name || "");
+    if (!name) continue;
+    const slug = keyNorm(name);
+    if (seen.has(slug)) continue;
+    const metricA = strip(m?.metricA || "");
+    const metricB = strip(m?.metricB || "");
+    if (!metricA || !metricB) continue;
+    const operation = CUSTOM_METRIC_OPERATIONS.some(op => op.value === m?.operation) ? m.operation : "add";
+    const color = /^#[0-9a-fA-F]{6}$/.test(String(m?.color || "")) ? String(m.color) : "#FF6B6B";
+    out.push({
+      id: strip(m?.id || `cm_${slug}`),
+      name,
+      metricA,
+      metricB,
+      operation,
+      color
+    });
+    seen.add(slug);
+  }
+  return out;
+}
+
 /* Money parsing */
 const MONEY_RE = /([£$€])?\s*([\d.,]+)\s*([KkMm])?/;
 function parseOneMoney(s) {
@@ -1386,7 +1441,7 @@ function useResizeObserver(ref) {
 /* ===================== Charts ===================== */
 
 /* ============== Pizza Chart Component (JavaScript SVG) =============== */
-const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex }) => {
+const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customMetricColors = {} }) => {
   const [chartData, setChartData] = useState(null);
   const [hoveredSegment, setHoveredSegment] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
@@ -1426,11 +1481,16 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex }) => {
     const numStats = stats.length;
 
     // Colors for each stat segment
-    const colors = [
+    const paletteColors = [
       '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
       '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
       '#1DD1A1', '#FD79A8', '#6C5CE7', '#A29BFE', '#FD79A8'
     ];
+
+    const colorForStat = (statName, index) => {
+      const custom = customMetricColors?.[statName];
+      return custom || paletteColors[index % paletteColors.length];
+    };
 
     // Function to determine if a color is light or dark
     const getTextColor = (hexColor) => {
@@ -1468,7 +1528,7 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex }) => {
 
       return {
         path: pathData,
-        color: colors[index % colors.length],
+        color: colorForStat(stat.label, index),
         label: stat.label,
         value: stat.value,
         raw: stat.raw
@@ -1544,7 +1604,7 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex }) => {
             const x = center + Math.cos(midAngle) * labelRadius;
             const y = centerY + Math.sin(midAngle) * labelRadius;
             
-            const sliceColor = colors[index % colors.length];
+            const sliceColor = colorForStat(stat.label, index);
             const textColor = getTextColor(sliceColor);
             const shadowColor = textColor === '#FFFFFF' ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.8)';
             
@@ -2573,7 +2633,7 @@ const ValueBreakdown = ({ playerName, getValueBreakdown, managedClub, rows, filt
               case 'contract': return 'Contract Length';
               case 'versatility': return 'Versatility Bonus';
               case 'scarcity': return 'Position Scarcity';
-              case 'leagueContext': return 'League Standing';
+              case 'leagueContext': return 'Peer Performance (League Group)';
               case 'economic': return 'Economic Factor';
               case 'reputation': return 'Reputation Value';
               default: return k;
@@ -2781,8 +2841,81 @@ export default function App(){
   const [roleY, setRoleY] = useStickyState("scatter:roleY", Object.keys(ROLE_STATS)[1] || Object.keys(ROLE_STATS)[0] || "");
 
   const allStats = useMemo(()=> Array.from(new Set([ ...Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights)) ])), []);
+  const [scatterMetricScope, setScatterMetricScope] = useStickyState("scatter:metricScope", "Role Metrics");
+  const [customMetricsStore, setCustomMetricsStore] = useStickyState("custom:metrics", []);
+  const customMetrics = useMemo(() => normalizeCustomMetrics(customMetricsStore), [customMetricsStore]);
+  const customMetricNames = useMemo(() => customMetrics.map(m => m.name), [customMetrics]);
+  const customMetricColorMap = useMemo(() => {
+    const out = {};
+    for (const m of customMetrics) out[m.name] = m.color;
+    return out;
+  }, [customMetrics]);
+  const setCustomMetrics = useCallback((updater) => {
+    setCustomMetricsStore(prev => {
+      const base = normalizeCustomMetrics(prev);
+      const next = typeof updater === "function" ? updater(base) : updater;
+      return normalizeCustomMetrics(next);
+    });
+  }, [setCustomMetricsStore]);
+
+  const dbNumericStats = useMemo(() => {
+    if (!rows.length) return [];
+    const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r || {}))));
+    const nonStatColumns = new Set([
+      "Name", "Club", "League", "Pos", "Nat", "2nd Nat", "Based In", "Info",
+      "Personality", "Media Handling", "Home-Grown Status", "Preferred Foot", "Expires"
+    ]);
+    const out = [];
+    for (const col of cols) {
+      if (!col || nonStatColumns.has(col)) continue;
+      let finiteCount = 0;
+      for (const row of rows) {
+        const v = numerify(getCell(row, col));
+        if (Number.isFinite(v)) {
+          finiteCount++;
+          if (finiteCount >= 3) break;
+        }
+      }
+      if (finiteCount >= 3) out.push(col);
+    }
+    return out.sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
+  }, [rows]);
+
+  const metricBuilderOptions = useMemo(() => {
+    return Array.from(new Set([...allStats, ...dbNumericStats]))
+      .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
+  }, [allStats, dbNumericStats]);
+
+  const scatterStatOptions = useMemo(() => {
+    const source = scatterMetricScope === "All Database Metrics"
+      ? Array.from(new Set([...allStats, ...dbNumericStats]))
+      : allStats;
+    return Array.from(new Set([...source, ...customMetricNames]))
+      .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
+  }, [scatterMetricScope, allStats, dbNumericStats, customMetricNames]);
+
+  const customMetricMap = useMemo(() => {
+    const m = new Map();
+    for (const cm of customMetrics) m.set(cm.name, cm);
+    return m;
+  }, [customMetrics]);
+
+  const metricValue = useCallback((row, metricName) => {
+    const cm = customMetricMap.get(metricName);
+    if (!cm) return numerify(getCell(row, metricName));
+    const a = numerify(getCell(row, cm.metricA));
+    const b = numerify(getCell(row, cm.metricB));
+    return applyCustomMetricOperation(cm.operation, a, b);
+  }, [customMetricMap]);
+
   const [statX, setStatX] = useStickyState("scatter:statX", allStats[0] || "Shots/90");
   const [statY, setStatY] = useStickyState("scatter:statY", allStats[1] || "SoT/90");
+
+  const [cmName, setCmName] = useState("");
+  const [cmMetricA, setCmMetricA] = useState("");
+  const [cmMetricB, setCmMetricB] = useState("");
+  const [cmOperation, setCmOperation] = useState("add");
+  const [cmColor, setCmColor] = useState("#FF6B6B");
 
   /* ---------- Value model config ---------- */
   const [valueCfg, setValueCfg] = useStickyState("value:cfg", DEFAULT_VALUE_CONFIG);
@@ -2965,6 +3098,103 @@ export default function App(){
       setStatus(`Failed: ${String(err?.message || err)}`);
     }
   }
+
+  useEffect(() => {
+    if (!metricBuilderOptions.length) return;
+    if (!metricBuilderOptions.includes(cmMetricA)) {
+      setCmMetricA(metricBuilderOptions[0]);
+    }
+    if (!metricBuilderOptions.includes(cmMetricB)) {
+      setCmMetricB(metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0]);
+    }
+  }, [metricBuilderOptions, cmMetricA, cmMetricB]);
+
+  useEffect(() => {
+    if (!scatterStatOptions.length) return;
+    if (!scatterStatOptions.includes(statX)) {
+      setStatX(scatterStatOptions[0]);
+    }
+    if (!scatterStatOptions.includes(statY)) {
+      setStatY(scatterStatOptions[Math.min(1, scatterStatOptions.length - 1)] || scatterStatOptions[0]);
+    }
+  }, [scatterStatOptions, statX, statY, setStatX, setStatY]);
+
+  const addCustomMetric = useCallback(() => {
+    const name = strip(cmName);
+    if (!name) {
+      alert("Enter a custom metric name first.");
+      return;
+    }
+    if (!cmMetricA || !cmMetricB) {
+      alert("Pick two source metrics first.");
+      return;
+    }
+    const reserved = new Set([...allStats, ...dbNumericStats].map(s => keyNorm(s)));
+    if (reserved.has(keyNorm(name)) || customMetrics.some(m => keyNorm(m.name) === keyNorm(name))) {
+      alert("That metric name already exists. Please choose a unique name.");
+      return;
+    }
+    const created = normalizeCustomMetrics([{
+      id: `cm_${Date.now()}`,
+      name,
+      metricA: cmMetricA,
+      metricB: cmMetricB,
+      operation: cmOperation,
+      color: cmColor
+    }]);
+    if (!created.length) return;
+    setCustomMetrics(prev => [...prev, created[0]]);
+    setCmName("");
+  }, [cmName, cmMetricA, cmMetricB, cmOperation, cmColor, allStats, dbNumericStats, customMetrics, setCustomMetrics]);
+
+  const removeCustomMetric = useCallback((metricName) => {
+    setCustomMetrics(prev => prev.filter(m => m.name !== metricName));
+  }, [setCustomMetrics]);
+
+  const exportCustomMetrics = useCallback(() => {
+    if (!customMetrics.length) {
+      alert("No custom metrics to export yet.");
+      return;
+    }
+    const payload = {
+      version: "1.0",
+      metrics: customMetrics
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "custom_metrics.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [customMetrics]);
+
+  const importCustomMetrics = useCallback((e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(String(evt.target?.result || "{}"));
+        const incoming = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.metrics) ? parsed.metrics : []);
+        const normalized = normalizeCustomMetrics(incoming)
+          .filter(m => metricBuilderOptions.includes(m.metricA) && metricBuilderOptions.includes(m.metricB));
+        if (!normalized.length) {
+          alert("No valid custom metrics found in that file.");
+          return;
+        }
+        setCustomMetrics(prev => {
+          const map = new Map(prev.map(m => [keyNorm(m.name), m]));
+          for (const m of normalized) map.set(keyNorm(m.name), m);
+          return Array.from(map.values());
+        });
+      } catch {
+        alert("Invalid custom metrics JSON file.");
+      }
+    };
+    reader.readAsText(file);
+  }, [metricBuilderOptions, setCustomMetrics]);
 
   /* ---------- Filtered rows (uses only applied searchQuery) ---------- */
   const filteredRows = useMemo(() => {
@@ -3197,10 +3427,10 @@ export default function App(){
       name: r["Name"],
       pos: (expandFMPositions(r["Pos"])[0]||""),
       club: r["Club"],
-      x: numerify(getCell(r, statX)),
-      y: numerify(getCell(r, statY)),
+      x: metricValue(r, statX),
+      y: metricValue(r, statY),
     })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
-  }, [filteredRows, statX, statY]);
+  }, [filteredRows, statX, statY, metricValue]);
 
   /* ===================== Modes ===================== */
 
@@ -3388,6 +3618,7 @@ export default function App(){
                   roleStats={statsBestRole}
                   compScope={compScope}
                   pctIndex={pctIndex}
+                  customMetricColors={customMetricColorMap}
                 />
               </div>
             </div>
@@ -3547,21 +3778,104 @@ export default function App(){
   }
 
   function StatScatterMode(){
+    const renderFormula = (m) => {
+      if (m.operation === "average") return `avg(${m.metricA}, ${m.metricB})`;
+      return `${m.metricA} ${CUSTOM_METRIC_SYMBOL[m.operation] || "?"} ${m.metricB}`;
+    };
+
     return (
       <div className="card">
-        <div className="cardHead" style={{gap:12}}>
+        <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
           <div style={{fontWeight:800, fontSize: "1.1em"}}>Stat Scatter — {LABELS.get(statX)||statX} vs {LABELS.get(statY)||statY}</div>
-          <div style={{display:"flex", gap:8, alignItems:"center"}}>
-            <select className="input" style={{minWidth:200}} value={statX} onChange={e=>setStatX(e.target.value)}>
-              {allStats.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
-            </select>
-            <span style={{color:"var(--muted)"}}>vs</span>
-            <select className="input" style={{minWidth:200}} value={statY} onChange={e=>setStatY(e.target.value)}>
-              {allStats.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
-            </select>
-          </div>
+          <div className="badge">{statScatterPoints.length} players</div>
         </div>
-        <div className="cardBody">
+        <div className="cardBody" style={{display:"flex", flexDirection:"column", gap:12}}>
+          <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+            <div className="col" style={{minWidth:220}}>
+              <label className="lbl">Metric source</label>
+              <select className="input" value={scatterMetricScope} onChange={e=>setScatterMetricScope(e.target.value)}>
+                <option value="Role Metrics">Role Metrics</option>
+                <option value="All Database Metrics">All Database Metrics</option>
+              </select>
+            </div>
+            <div className="col" style={{minWidth:220}}>
+              <label className="lbl">X axis</label>
+              <select className="input" value={statX} onChange={e=>setStatX(e.target.value)}>
+                {scatterStatOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+              </select>
+            </div>
+            <div className="col" style={{minWidth:220}}>
+              <label className="lbl">Y axis</label>
+              <select className="input" value={statY} onChange={e=>setStatY(e.target.value)}>
+                {scatterStatOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{border:"1px solid var(--cardBorder)", borderRadius:12, padding:12}}>
+            <div className="row" style={{alignItems:"center", marginBottom:8}}>
+              <div style={{fontWeight:700}}>Custom Metrics</div>
+              <div style={{marginLeft:"auto", display:"flex", gap:8, alignItems:"center"}}>
+                <button className="btn ghost tight" onClick={exportCustomMetrics}>Export JSON</button>
+                <label className="btn ghost tight" style={{cursor:"pointer"}}>
+                  Import JSON
+                  <input type="file" accept=".json" onChange={importCustomMetrics} style={{display:"none"}} />
+                </label>
+              </div>
+            </div>
+
+            <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+              <div className="col" style={{minWidth:180}}>
+                <label className="lbl">Name</label>
+                <input className="input" value={cmName} onChange={e=>setCmName(e.target.value)} placeholder="e.g. Aggression Balance" />
+              </div>
+              <div className="col" style={{minWidth:180}}>
+                <label className="lbl">Metric A</label>
+                <select className="input" value={cmMetricA} onChange={e=>setCmMetricA(e.target.value)}>
+                  {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                </select>
+              </div>
+              <div style={{width:150}}>
+                <label className="lbl">Operation</label>
+                <select className="input" value={cmOperation} onChange={e=>setCmOperation(e.target.value)}>
+                  {CUSTOM_METRIC_OPERATIONS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
+                </select>
+              </div>
+              <div className="col" style={{minWidth:180}}>
+                <label className="lbl">Metric B</label>
+                <select className="input" value={cmMetricB} onChange={e=>setCmMetricB(e.target.value)}>
+                  {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                </select>
+              </div>
+              <div style={{width:120}}>
+                <label className="lbl">Color</label>
+                <input className="input" type="color" value={cmColor} onChange={e=>setCmColor(e.target.value)} />
+              </div>
+              <button className="btn" onClick={addCustomMetric}>Add Metric</button>
+            </div>
+
+            {customMetrics.length ? (
+              <div style={{marginTop:10, display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))", gap:8}}>
+                {customMetrics.map(m => (
+                  <div key={m.id || m.name} style={{display:"flex", alignItems:"center", gap:8, border:"1px solid var(--cardBorder)", borderRadius:8, padding:"8px 10px"}}>
+                    <div style={{width:12, height:12, borderRadius:3, background:m.color, border:"1px solid rgba(0,0,0,0.25)"}} />
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{m.name}</div>
+                      <div style={{fontSize:11, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{renderFormula(m)}</div>
+                    </div>
+                    <button className="btn ghost alt tight" onClick={()=>removeCustomMetric(m.name)}>Remove</button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="status" style={{marginTop:8}}>No custom metrics yet. Add one with two metrics and an operation.</div>
+            )}
+          </div>
+
+          <div style={{fontSize:12, color:"var(--muted)"}}>
+            Custom metrics are available in Stat Scatter selectors and can be imported/exported as JSON.
+          </div>
+
           <Scatter
             points={statScatterPoints}
             xLabel={LABELS.get(statX)||statX}
@@ -3607,7 +3921,7 @@ export default function App(){
   }
   function statLeadersData(stat, limit=30){
     const arr = filteredRows
-      .map(r => ({ name:r["Name"], club:r["Club"], pos:(expandFMPositions(r["Pos"])[0]||""), v: numerify(getCell(r, stat)) }))
+      .map(r => ({ name:r["Name"], club:r["Club"], pos:(expandFMPositions(r["Pos"])[0]||""), v: metricValue(r, stat) }))
       .filter(x => Number.isFinite(x.v))
       .sort((a,b)=>b.v-a.v)
       .slice(0, limit);
@@ -3663,7 +3977,7 @@ export default function App(){
           <div style={{fontWeight:800}}>Stat Leaders</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <select className="input" value={localStat} onChange={(e)=>{ setLocalStat(e.target.value); setStatX(e.target.value); }}>
-              {allStats.map(s => <option key={s} value={s}>{LABELS.get(s)||s}</option>)}
+              {scatterStatOptions.map(s => <option key={s} value={s}>{LABELS.get(s)||s}</option>)}
             </select>
           </div>
         </div>
@@ -4815,12 +5129,18 @@ export default function App(){
                   {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
 
+                <label className="lbl">Scatter metric source</label>
+                <select className="input" value={scatterMetricScope} onChange={e=>setScatterMetricScope(e.target.value)}>
+                  <option value="Role Metrics">Role Metrics</option>
+                  <option value="All Database Metrics">All Database Metrics</option>
+                </select>
+
                 <label className="lbl">Scatter stats</label>
                 <select className="input" value={statX} onChange={e=>setStatX(e.target.value)}>
-                  {allStats.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                  {scatterStatOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
                 </select>
                 <select className="input" value={statY} onChange={e=>setStatY(e.target.value)}>
-                  {allStats.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                  {scatterStatOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
                 </select>
               </div>
 
@@ -4901,10 +5221,15 @@ export default function App(){
   function PlayerFinderMode(){
     const [pfRole, setPfRole] = useStickyState("pf:role", role);
     const [pfMinScore, setPfMinScore] = useStickyState("pf:minScore", 70);
-    const [pfUseStat, setPfUseStat] = useStickyState("pf:useStat", statX || allStats[0] || "");
+    const [pfUseStat, setPfUseStat] = useStickyState("pf:useStat", statX || scatterStatOptions[0] || allStats[0] || "");
     const [pfMinStat, setPfMinStat] = useStickyState("pf:minStat", 0);
     const [pfUnderratedOnly, setPfUnderratedOnly] = useStickyState("pf:underratedOnly", false);
     const [pfUnderratedMargin, setPfUnderratedMargin] = useStickyState("pf:underratedMargin", 0.15);
+
+    useEffect(() => {
+      if (!scatterStatOptions.length) return;
+      if (!scatterStatOptions.includes(pfUseStat)) setPfUseStat(scatterStatOptions[0]);
+    }, [scatterStatOptions, pfUseStat, setPfUseStat]);
 
     // If user hasn't applied search/filters, show prompt (and avoid heavy computation)
     if (!searchApplied) {
@@ -4939,7 +5264,7 @@ export default function App(){
         const currW = wageWeeklyOf(r);
         const gameMid = parseMoneyRange(getCell(r,"Transfer Value")||"").mid;
         const scoreInRole = roleScoreOfRow(r, pfRole);
-        const statVal = numerify(getCell(r, pfUseStat));
+        const statVal = metricValue(r, pfUseStat);
         const undervalued = Number.isFinite(gameMid) ? (tv > gameMid * (1 + pfUnderratedMargin)) : false;
 
         return {
@@ -4950,7 +5275,7 @@ export default function App(){
         };
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filteredRows, bestRoleCache, pfRole, pfUseStat, pfUnderratedMargin, trueValue, buyAt, fairWage, maxWage, roleScoreOfRow, wageWeeklyOf]);
+    }, [filteredRows, bestRoleCache, pfRole, pfUseStat, pfUnderratedMargin, trueValue, buyAt, fairWage, maxWage, roleScoreOfRow, wageWeeklyOf, metricValue]);
 
     const rowsFiltered = useMemo(() => {
       return rowsPF.filter(p => {
@@ -4988,7 +5313,7 @@ export default function App(){
               <label className="lbl">Stat threshold</label>
               <div className="row" style={{gap:8}}>
                 <select className="input" value={pfUseStat} onChange={e=>setPfUseStat(e.target.value)}>
-                  {allStats.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                  {scatterStatOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
                 </select>
                 <input className="input" style={{width:120}} type="number" step="0.01"
                   value={pfMinStat} onChange={(e)=>setPfMinStat(Number(e.target.value)||0)} />
