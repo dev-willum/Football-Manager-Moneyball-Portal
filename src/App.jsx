@@ -527,10 +527,21 @@ function normalizePlayerName(name) {
   return normalized;
 }
 
+function mapHeaderName(rawHeader) {
+  const clean = String(rawHeader || "").replace(/^\uFEFF/, "").trim();
+  if (!clean) return clean;
+  if (RENAME_MAP.has(clean)) return RENAME_MAP.get(clean);
+  const kn = keyNorm(clean);
+  for (const [from, to] of RENAME_MAP.entries()) {
+    if (keyNorm(from) === kn) return to;
+  }
+  return clean;
+}
+
 function normalizeHeadersRowObjects(rows) {
   if (!rows || !rows.length) return [];
   const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
-  const resolved = new Map(); for (const c of cols) resolved.set(c, RENAME_MAP.get(c) || c);
+  const resolved = new Map(); for (const c of cols) resolved.set(c, mapHeaderName(c));
   return rows.map(r => {
     const o = {};
     for (const [k, v] of Object.entries(r)) {
@@ -570,7 +581,7 @@ async function parseHtmlTable(file) {
   const dataRows = trs.slice(headerRowIndex + 1);
   const out = dataRows.map(tr => {
     const cells = Array.from(tr.children).map(td => td.textContent.trim());
-    const obj = {}; headerCells.forEach((h, i) => { const key = (RENAME_MAP.get(h) || h).trim(); obj[key] = cells[i]; });
+    const obj = {}; headerCells.forEach((h, i) => { const key = mapHeaderName(h); obj[key] = cells[i]; });
     return obj;
   });
   return out;
@@ -761,6 +772,13 @@ function getCell(obj, name) {
     if (mapped in obj) return obj[mapped];
   }
   const kn = keyNorm(name);
+  // If caller asks for a canonical key (e.g. "Name"), allow source aliases (e.g. "Player").
+  for (const [from, to] of RENAME_MAP.entries()) {
+    if (keyNorm(to) !== kn) continue;
+    if (from in obj) return obj[from];
+    const fromKn = keyNorm(from);
+    for (const k of Object.keys(obj)) if (keyNorm(k) === fromKn) return obj[k];
+  }
   for (const k of Object.keys(obj)) if (keyNorm(k) === kn) return obj[k];
   return undefined;
 }
@@ -2770,6 +2788,19 @@ export default function App(){
   const [valueCfg, setValueCfg] = useStickyState("value:cfg", DEFAULT_VALUE_CONFIG);
   const safeValueCfg = useMemo(() => normalizeValueCfg(valueCfg), [valueCfg]);
 
+  const clearAppCache = useCallback(() => {
+    const confirmed = window.confirm("Clear saved app settings and selections, then reload?");
+    if (!confirmed) return;
+    const prefixes = ["ui:", "flt:", "game:", "manager:", "transfer:", "sel:", "scatter:", "value:", "comp:", "custom:", "pf:"];
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (prefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);
+      }
+    } catch {}
+    setStatus("Cache cleared. Reloading...");
+    window.location.reload();
+  }, [setStatus]);
+
   /* ---------- Dynamic value anchoring ---------- */
   const tierAverages = useMemo(() => {
     const tierGroups = { elite: [], strong: [], solid: [], growth: [], develop: [] };
@@ -2895,10 +2926,7 @@ export default function App(){
       skipEmptyLines: true,
       delimiter: "", // auto-detect by default
       delimitersToGuess: [",", ";", "\t", "|"],
-      transformHeader: (h) => {
-        const clean = String(h || "").replace(/^\uFEFF/, "").trim();
-        return RENAME_MAP.get(clean) || clean;
-      },
+      transformHeader: (h) => mapHeaderName(h),
       ...options,
       complete: (res) => resolve(res),
       error: (err) => reject(err),
@@ -5162,6 +5190,7 @@ export default function App(){
           {Object.keys(THEMES).map(t => (
             <button key={t} className={`segBtn ${themeName===t?"active":""}`} onClick={()=>setThemeName(t)}>{t}</button>
           ))}
+          <button className="segBtn" onClick={clearAppCache} title="Clear saved cache and reload">Clear Cache</button>
         </div>
       </div>
     );
