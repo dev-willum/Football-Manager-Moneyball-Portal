@@ -2878,15 +2878,15 @@ export default function App(){
   }, [rows, datasetColumns]);
 
   const metricBuilderOptions = useMemo(() => {
-    return Array.from(new Set([...allStats, ...dbNumericStats]))
+    const source = dbNumericStats.length ? dbNumericStats : allStats;
+    return Array.from(new Set(source))
       .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
-  }, [allStats, dbNumericStats]);
+  }, [dbNumericStats, allStats]);
 
   const scatterStatOptions = useMemo(() => {
-    const source = Array.from(new Set([...allStats, ...dbNumericStats]));
-    return Array.from(new Set([...source, ...customMetricNames]))
+    return Array.from(new Set([...metricBuilderOptions, ...customMetricNames]))
       .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
-  }, [allStats, dbNumericStats, customMetricNames]);
+  }, [metricBuilderOptions, customMetricNames]);
 
   const customMetricMap = useMemo(() => {
     const m = new Map();
@@ -2902,8 +2902,8 @@ export default function App(){
     return applyCustomMetricOperation(cm.operation, a, b);
   }, [customMetricMap]);
 
-  const [statX, setStatX] = useStickyState("scatter:statX", allStats[0] || "Shots/90");
-  const [statY, setStatY] = useStickyState("scatter:statY", allStats[1] || "SoT/90");
+  const [statX, setStatX] = useStickyState("scatter:statX", "");
+  const [statY, setStatY] = useStickyState("scatter:statY", "");
 
   const [cmName, setCmName] = useState("");
   const [cmMetricA, setCmMetricA] = useState("");
@@ -3047,6 +3047,25 @@ export default function App(){
   }, [themeName]);
 
   /* ---------- File loading ---------- */
+  const countDelimitedColumns = (line, delimiter) => {
+    if (!line) return 0;
+    let count = 1;
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          i++; // escaped quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === delimiter && !inQuotes) {
+        count++;
+      }
+    }
+    return count;
+  };
+
   const parseCsvFile = (file, options = {}) => new Promise((resolve, reject) => {
     Papa.parse(file, {
       header: true,
@@ -3067,16 +3086,28 @@ export default function App(){
       setStatus(`Loading ${file.name}…`);
       const ext = file.name.toLowerCase().split(".").pop();
       if (ext === "csv") {
+        const text = await file.text();
+        const headerLine = String(text.split(/\r?\n/, 1)[0] || "");
+        const delimiterCandidates = [",", ";", "\t", "|"];
+        const delimiterCounts = Object.fromEntries(
+          delimiterCandidates.map(d => [d, countDelimitedColumns(headerLine, d)])
+        );
+        const bestDelimiter = delimiterCandidates.reduce((best, d) =>
+          (delimiterCounts[d] > delimiterCounts[best] ? d : best), delimiterCandidates[0]
+        );
+
         let res = await parseCsvFile(file);
-        const fields = res?.meta?.fields || [];
-        if (fields.length <= 1) {
-          const first = String(fields[0] || "");
-          let fallback = "";
-          if (first.includes(";")) fallback = ";";
-          else if (first.includes("\t")) fallback = "\t";
-          else if (first.includes("|")) fallback = "|";
-          if (fallback) res = await parseCsvFile(file, { delimiter: fallback });
+        const parsedFields = res?.meta?.fields || [];
+        const parsedCount = parsedFields.length;
+        const expectedCount = delimiterCounts[bestDelimiter] || 0;
+        const needsFallback =
+          (parsedCount <= 1 && expectedCount > 1) ||
+          (parsedCount > 1 && expectedCount > 1 && parsedCount < Math.floor(expectedCount * 0.75));
+
+        if (needsFallback) {
+          res = await parseCsvFile(file, { delimiter: bestDelimiter });
         }
+
         const rowsN = normalizeHeadersRowObjects(res.data || []);
         const csvFields = (res?.meta?.fields || []).map(f => mapHeaderName(f)).filter(Boolean);
         const inferred = Array.from(new Set(rowsN.flatMap(r => Object.keys(r || {}))));
@@ -3130,7 +3161,7 @@ export default function App(){
       alert("Pick two source metrics first.");
       return;
     }
-    const reserved = new Set([...allStats, ...dbNumericStats].map(s => keyNorm(s)));
+    const reserved = new Set(metricBuilderOptions.map(s => keyNorm(s)));
     if (reserved.has(keyNorm(name)) || customMetrics.some(m => keyNorm(m.name) === keyNorm(name))) {
       alert("That metric name already exists. Please choose a unique name.");
       return;
@@ -3146,7 +3177,7 @@ export default function App(){
     if (!created.length) return;
     setCustomMetrics(prev => [...prev, created[0]]);
     setCmName("");
-  }, [cmName, cmMetricA, cmMetricB, cmOperation, cmColor, allStats, dbNumericStats, customMetrics, setCustomMetrics]);
+  }, [cmName, cmMetricA, cmMetricB, cmOperation, cmColor, metricBuilderOptions, customMetrics, setCustomMetrics]);
 
   const removeCustomMetric = useCallback((metricName) => {
     setCustomMetrics(prev => prev.filter(m => m.name !== metricName));
@@ -3789,6 +3820,7 @@ export default function App(){
       <div className="card">
         <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
           <div style={{fontWeight:800, fontSize: "1.1em"}}>Stat Scatter — {LABELS.get(statX)||statX} vs {LABELS.get(statY)||statY}</div>
+          <div className="badge">{scatterStatOptions.length} stats</div>
           <div className="badge">{statScatterPoints.length} players</div>
         </div>
         <div className="cardBody" style={{display:"flex", flexDirection:"column", gap:12}}>
