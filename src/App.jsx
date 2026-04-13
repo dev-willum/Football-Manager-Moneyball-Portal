@@ -2880,12 +2880,10 @@ export default function App(){
   }, [allStats, dbNumericStats]);
 
   const scatterStatOptions = useMemo(() => {
-    const source = scatterMetricScope === "All Database Metrics"
-      ? Array.from(new Set([...allStats, ...dbNumericStats]))
-      : allStats;
+    const source = Array.from(new Set([...allStats, ...dbNumericStats]));
     return Array.from(new Set([...source, ...customMetricNames]))
       .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
-  }, [scatterMetricScope, allStats, dbNumericStats, customMetricNames]);
+  }, [allStats, dbNumericStats, customMetricNames]);
 
   const customMetricMap = useMemo(() => {
     const m = new Map();
@@ -4009,7 +4007,7 @@ export default function App(){
       setCustomBaseline(prev => prev.includes(p) ? prev.filter(x=>x!==p) : [...prev, p]);
     };
     const addStat = () => {
-      const pick = allStats.find(s => !(s in customWeights));
+      const pick = metricBuilderOptions.find(s => !(s in customWeights));
       if (pick) setCustomWeights({...customWeights, [pick]: 1.0});
     };
     const removeStat = (s) => {
@@ -4105,7 +4103,7 @@ export default function App(){
                       const w = customWeights[s];
                       const next = {...customWeights}; delete next[s]; next[val] = w; setCustomWeights(next);
                     }}>
-                      {allStats.map(st => <option key={st} value={st}>{LABELS.get(st)||st}</option>)}
+                      {metricBuilderOptions.map(st => <option key={st} value={st}>{LABELS.get(st)||st}</option>)}
                     </select>
                   </div>
                   <div style={{width:120}}>
