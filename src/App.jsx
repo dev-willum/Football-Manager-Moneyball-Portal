@@ -2842,6 +2842,7 @@ export default function App(){
 
   const allStats = useMemo(()=> Array.from(new Set([ ...Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights)) ])), []);
   const [scatterMetricScope, setScatterMetricScope] = useStickyState("scatter:metricScope", "Role Metrics");
+  const [scatterRowScope, setScatterRowScope] = useStickyState("scatter:rowScope", "All Loaded");
   const [customMetricsStore, setCustomMetricsStore] = useStickyState("custom:metrics", []);
   const customMetrics = useMemo(() => normalizeCustomMetrics(customMetricsStore), [customMetricsStore]);
   const customMetricNames = useMemo(() => customMetrics.map(m => m.name), [customMetrics]);
@@ -2873,10 +2874,10 @@ export default function App(){
         const v = numerify(getCell(row, col));
         if (Number.isFinite(v)) {
           finiteCount++;
-          if (finiteCount >= 3) break;
+          if (finiteCount >= 1) break;
         }
       }
-      if (finiteCount >= 3) out.push(col);
+      if (finiteCount >= 1) out.push(col);
     }
     return out.sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
   }, [rows]);
@@ -3423,14 +3424,15 @@ export default function App(){
   }, [filteredRows, roleX, roleY, roleScoreOfRow]);
 
   const statScatterPoints = useMemo(()=>{
-    return filteredRows.map(r => ({
+    const sourceRows = scatterRowScope === "All Loaded" ? rows : filteredRows;
+    return sourceRows.map(r => ({
       name: r["Name"],
       pos: (expandFMPositions(r["Pos"])[0]||""),
       club: r["Club"],
       x: metricValue(r, statX),
       y: metricValue(r, statY),
     })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
-  }, [filteredRows, statX, statY, metricValue]);
+  }, [rows, filteredRows, scatterRowScope, statX, statY, metricValue]);
 
   /* ===================== Modes ===================== */
 
@@ -3791,6 +3793,13 @@ export default function App(){
         </div>
         <div className="cardBody" style={{display:"flex", flexDirection:"column", gap:12}}>
           <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+            <div className="col" style={{minWidth:220}}>
+              <label className="lbl">Data rows</label>
+              <select className="input" value={scatterRowScope} onChange={e=>setScatterRowScope(e.target.value)}>
+                <option value="All Loaded">All Loaded CSV Rows</option>
+                <option value="Filtered">Filtered Cohort</option>
+              </select>
+            </div>
             <div className="col" style={{minWidth:220}}>
               <label className="lbl">Metric source</label>
               <select className="input" value={scatterMetricScope} onChange={e=>setScatterMetricScope(e.target.value)}>
