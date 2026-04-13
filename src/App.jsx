@@ -2841,7 +2841,7 @@ export default function App(){
   const [roleY, setRoleY] = useStickyState("scatter:roleY", Object.keys(ROLE_STATS)[1] || Object.keys(ROLE_STATS)[0] || "");
 
   const allStats = useMemo(()=> Array.from(new Set([ ...Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights)) ])), []);
-  const [scatterMetricScope, setScatterMetricScope] = useStickyState("scatter:metricScope", "Role Metrics");
+  const [scatterMetricScope, setScatterMetricScope] = useStickyState("scatter:metricScope", "All Database Metrics");
   const [scatterRowScope, setScatterRowScope] = useStickyState("scatter:rowScope", "All Loaded");
   const [customMetricsStore, setCustomMetricsStore] = useStickyState("custom:metrics", []);
   const customMetrics = useMemo(() => normalizeCustomMetrics(customMetricsStore), [customMetricsStore]);
@@ -2869,15 +2869,7 @@ export default function App(){
     const out = [];
     for (const col of cols) {
       if (!col || nonStatColumns.has(col)) continue;
-      let finiteCount = 0;
-      for (const row of rows) {
-        const v = numerify(getCell(row, col));
-        if (Number.isFinite(v)) {
-          finiteCount++;
-          if (finiteCount >= 1) break;
-        }
-      }
-      if (finiteCount >= 1) out.push(col);
+      out.push(col);
     }
     return out.sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
   }, [rows]);
@@ -3986,7 +3978,7 @@ export default function App(){
           <div style={{fontWeight:800}}>Stat Leaders</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <select className="input" value={localStat} onChange={(e)=>{ setLocalStat(e.target.value); setStatX(e.target.value); }}>
-              {scatterStatOptions.map(s => <option key={s} value={s}>{LABELS.get(s)||s}</option>)}
+              {metricBuilderOptions.map(s => <option key={s} value={s}>{LABELS.get(s)||s}</option>)}
             </select>
           </div>
         </div>
@@ -5230,15 +5222,15 @@ export default function App(){
   function PlayerFinderMode(){
     const [pfRole, setPfRole] = useStickyState("pf:role", role);
     const [pfMinScore, setPfMinScore] = useStickyState("pf:minScore", 70);
-    const [pfUseStat, setPfUseStat] = useStickyState("pf:useStat", statX || scatterStatOptions[0] || allStats[0] || "");
+    const [pfUseStat, setPfUseStat] = useStickyState("pf:useStat", statX || metricBuilderOptions[0] || allStats[0] || "");
     const [pfMinStat, setPfMinStat] = useStickyState("pf:minStat", 0);
     const [pfUnderratedOnly, setPfUnderratedOnly] = useStickyState("pf:underratedOnly", false);
     const [pfUnderratedMargin, setPfUnderratedMargin] = useStickyState("pf:underratedMargin", 0.15);
 
     useEffect(() => {
-      if (!scatterStatOptions.length) return;
-      if (!scatterStatOptions.includes(pfUseStat)) setPfUseStat(scatterStatOptions[0]);
-    }, [scatterStatOptions, pfUseStat, setPfUseStat]);
+      if (!metricBuilderOptions.length) return;
+      if (!metricBuilderOptions.includes(pfUseStat)) setPfUseStat(metricBuilderOptions[0]);
+    }, [metricBuilderOptions, pfUseStat, setPfUseStat]);
 
     // If user hasn't applied search/filters, show prompt (and avoid heavy computation)
     if (!searchApplied) {
@@ -5322,7 +5314,7 @@ export default function App(){
               <label className="lbl">Stat threshold</label>
               <div className="row" style={{gap:8}}>
                 <select className="input" value={pfUseStat} onChange={e=>setPfUseStat(e.target.value)}>
-                  {scatterStatOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                  {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
                 </select>
                 <input className="input" style={{width:120}} type="number" step="0.01"
                   value={pfMinStat} onChange={(e)=>setPfMinStat(Number(e.target.value)||0)} />
