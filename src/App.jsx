@@ -2889,6 +2889,22 @@ export default function App(){
   }, [themeName]);
 
   /* ---------- File loading ---------- */
+  const parseCsvFile = (file, options = {}) => new Promise((resolve, reject) => {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      delimiter: "", // auto-detect by default
+      delimitersToGuess: [",", ";", "\t", "|"],
+      transformHeader: (h) => {
+        const clean = String(h || "").replace(/^\uFEFF/, "").trim();
+        return RENAME_MAP.get(clean) || clean;
+      },
+      ...options,
+      complete: (res) => resolve(res),
+      error: (err) => reject(err),
+    });
+  });
+
   async function handleFile(e){
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2896,21 +2912,19 @@ export default function App(){
       setStatus(`Loading ${file.name}…`);
       const ext = file.name.toLowerCase().split(".").pop();
       if (ext === "csv") {
-        await new Promise((resolve, reject) => {
-          Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
-            delimiter: "", // auto-detect
-            delimitersToGuess: [",", ";", "\t", "|"],
-            complete: (res) => {
-              const rowsN = normalizeHeadersRowObjects(res.data || []);
-              setRows(rowsN);
-              setStatus(`Loaded ${rowsN.length} rows. Player names normalized (accents removed).`);
-              resolve();
-            },
-            error: (err) => reject(err),
-          });
-        });
+        let res = await parseCsvFile(file);
+        const fields = res?.meta?.fields || [];
+        if (fields.length <= 1) {
+          const first = String(fields[0] || "");
+          let fallback = "";
+          if (first.includes(";")) fallback = ";";
+          else if (first.includes("\t")) fallback = "\t";
+          else if (first.includes("|")) fallback = "|";
+          if (fallback) res = await parseCsvFile(file, { delimiter: fallback });
+        }
+        const rowsN = normalizeHeadersRowObjects(res.data || []);
+        setRows(rowsN);
+        setStatus(`Loaded ${rowsN.length} rows. Player names normalized (accents removed).`);
       } else if (ext === "html" || ext === "htm") {
         const rowsN = await parseHtmlTable(file);
         setRows(normalizeHeadersRowObjects(rowsN));
