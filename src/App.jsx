@@ -269,33 +269,33 @@ select.input{ min-width:0; max-width:100%; }
 
 /* ===================== Header rename (exact) ===================== */
 const RENAME_MAP = new Map(Object.entries({
-  "Name":"Name","Position":"Pos","Age":"Age","Weight":"Weight","Height":"Height",
-  "Inf":"Info","Club":"Club","Division":"League","Nat":"Nat","2nd Nat":"2nd Nat",
+  "Name":"Name","Player":"Name","Position":"Pos","Age":"Age","Weight":"Weight","Height":"Height",
+  "Inf":"Info","Club":"Club","Division":"League","Based In":"Based In","Nat":"Nat","Nation":"Nat","2nd Nat":"2nd Nat",
   "Home-Grown Status":"Home-Grown Status","Personality":"Personality","Media Handling":"Media Handling",
   "Wage":"Wage","Transfer Value":"Transfer Value","Asking Price":"Asking Price","Preferred Foot":"Preferred Foot",
   "Expires":"Expires","Contract Expiry":"Expires","Contract Expires":"Expires","Expiry":"Expires",
-  "Yel":"Yellow Cards","xG":"Expected Goals","Starts":"Starts","Red":"Red Cards","PoM":"Player of the Match",
+  "Yel":"Yellow Cards","xG":"Expected Goals","Starts":"Starts","Red":"Red Cards","Red cards":"Red Cards","PoM":"Player of the Match",
   "Pen/R":"Pens Scored Ratio","Pens S":"Pens Scored","Pens Saved Ratio":"Pens Saved Ratio","Pens Saved":"Pens Saved",
-  "Pens Faced":"Pens Faced","Pens":"Pens","Mins":"Minutes","Gls/90":"Goals / 90","Conc":"Conceded","Gls":"Goals",
-  "Fls":"Fouls","FA":"Fouled","xG/90":"xG/90","xA/90":"Expected Assists/90","xA":"Expected Assists",
-  "Con/90":"Conceded/90","Clean Sheets":"Clean Sheets","Cln/90":"Clean Sheets/90","Av Rat":"Avg Rating",
-  "Mins/Gl":"Minutes / Goal","Ast":"Assist","Hdrs A":"Headers Attempted","Apps":"Appearances",
-  "Tck/90":"Tackles/90","Tck W":"Tackles Won","Tck A":"Tackles Attempted","Tck R":"Tackle Ratio",
+  "Pens Faced":"Pens Faced","Pens":"Pens","Mins":"Minutes","Gls/90":"Goals / 90","Goals per 90 minutes":"Goals / 90","Conc":"Conceded","Gls":"Goals",
+  "Fls":"Fouls","FA":"Fouled","Fouls Against":"Fouled","xG/90":"xG/90","xG/shot":"xG/Shot","xA/90":"Expected Assists/90","xA":"Expected Assists",
+  "Con/90":"Conceded/90","Clean Sheets":"Clean Sheets","Cln/90":"Clean Sheets/90","Av Rat":"Avg Rating","Rating":"Avg Rating",
+  "Mins/Gl":"Minutes / Goal","Ast":"Assist","Assists":"Assist","Asts/90":"Assists/90","Hdrs A":"Headers Attempted","Apps":"Appearances",
+  "Tck/90":"Tackles/90","Tck W":"Tackles Won","Tck C":"Tackles Won","Tck A":"Tackles Attempted","Tck R":"Tackle Ratio",
   "Shot/90":"Shots/90","Shot %":"Shot on Target Ratio","ShT/90":"SoT/90","ShT":"Shots on Target",
-  "Shots Outside Box/90":"Shots Outside Box/90","Shts Blckd/90":"Shots Blocked/90","Shts Blckd":"Shots Blocked",
-  "Shots":"Shots","Svt":"Saves Tipped","Svp":"Saves Parried","Svh":"Saves Held","Sv %":"Save Ratio",
-  "Pr passes/90":"Progressive Passes/90","Pr Passes":"Progressive Passes",
+  "Shots Outside Box/90":"Shots Outside Box/90","Shots From Outside The Box Per 90 minutes":"Shots Outside Box/90","Shts Blckd/90":"Shots Blocked/90","Shts Blckd":"Shots Blocked",
+  "Shots":"Shots","Goals From Outside The Box":"Goals Outside Box","Free Kick Shots":"Free Kick Shots","Svt":"Saves Tipped","Svp":"Saves Parried","Svh":"Saves Held","Sv %":"Save Ratio","xSv %":"Expected Save %",
+  "Pr passes/90":"Progressive Passes/90","Pr Passes":"Progressive Passes","PsP":"Progressive Passes",
   "Pres C/90":"Pressures Completed/90","Pres C":"Pressures Completed","Pres A/90":"Pressures Attempted/90","Pres A":"Pressures Attempted",
   "Poss Won/90":"Possession Won/90","Poss Lost/90":"Possession Lost/90","Ps C/90":"Passes Completed/90","Ps C":"Passes Completed",
   "Ps A/90":"Passes Attempted/90","Pas A":"Passes Attempted","Pas %":"Pass Completion%",
-  "OP-KP/90":"OP Key Passes/90","OP-KP":"OP Key Passes",
+  "OP-KP/90":"OP Key Passes/90","OP-KP":"OP Key Passes","KP/90":"Key Passes/90","Key":"Key Passes",
   "OP-Crs C/90":"OP Crosses Completed/90","OP-Crs C":"OP Crosses Completed",
   "OP-Crs A/90":"OP Crosses Attempted/90","OP-Crs A":"OP Crosses Attempted","OP-Cr %":"OP Cross Completion Ratio",
-  "Off":"Offsides","Gl Mst":"Mistakes Leading to Goal","K Tck/90":"Key Tackles/90","K Tck":"Key Tackles",
+  "Off":"Offsides","Gl Mst":"Mistakes Leading to Goal","MLG":"Mistakes Leading to Goal","K Tck/90":"Key Tackles/90","K Tck":"Key Tackles",
   "K Ps/90":"Key Passes/90","K Pas":"Key Passes","K Hdrs/90":"Key Headers/90","Int/90":"Interceptions/90","Itc":"Interceptions",
   "Sprints/90":"Sprint/90","Hdr %":"Header Win Rate","Hdrs W/90":"Headers won/90","Hdrs":"Headers","Hdrs L/90":"Headers Lost/90",
-  "Goals Outside Box":"Goals Outside Box","xGP/90":"Expected Goals Prevented/90","xGP":"Expected Goals Prevented",
-  "Drb/90":"Dribbles/90","Drb":"Dribbles","Distance":"Distance Covered (KM)","Cr C/90":"Crosses Completed/90","Cr C":"Crosses Completed",
+  "Goals Outside Box":"Goals Outside Box","xGP/90":"Expected Goals Prevented/90","xGP":"Expected Goals Prevented","NP-xG":"NP-xG","NP-xG/90":"NP-xG/90","xG-OP":"xG Overperformance",
+  "Drb/90":"Dribbles/90","Drb":"Dribbles","Distance":"Distance Covered (KM)","Dist/90":"Distance Covered/90","Cr C/90":"Crosses Completed/90","Cr C":"Crosses Completed",
   "Crs A/90":"Crosses Attempted/90","Cr A":"Crosses Attempted","Cr C/A":"Cross Completion Ratio","Conv %":"Conversion Rate",
   "Clr/90":"Clearances/90","Clear":"Clearances","CCC":"Chances Created","Ch C/90":"Chances Created/90",
   "Blk/90":"Blocks/90","Blk":"Blocks","Aer A/90":"Aerial Duels Attempted/90"
@@ -2900,6 +2900,8 @@ export default function App(){
           Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
+            delimiter: "", // auto-detect
+            delimitersToGuess: [",", ";", "\t", "|"],
             complete: (res) => {
               const rowsN = normalizeHeadersRowObjects(res.data || []);
               setRows(rowsN);
