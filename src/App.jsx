@@ -3,41 +3,6 @@ import React, { useEffect, useCallback,useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import Papa from "papaparse";
 
-/* ===================== Search Input ===================== */
-const SearchInput = React.memo(({ className, placeholder, initialValue = "", onSearch }) => {
-  const [value, setValue] = useState(initialValue);
-  const inputRef = useRef(null);
-
-  const handleChange = (e) => {
-    setValue(e.target.value);
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      onSearch(value);
-    } else if (e.key === "Escape") {
-      setValue("");
-      onSearch("");
-    }
-  };
-
-  useEffect(() => {
-    setValue(initialValue);
-  }, [initialValue]);
-
-  return (
-    <input
-      ref={inputRef}
-      className={className}
-      placeholder={placeholder}
-      value={value}
-      onChange={handleChange}
-      onKeyDown={handleKeyDown}
-      autoComplete="off"
-    />
-  );
-});
-
 /* ===================== Error Boundary ===================== */
 class ErrorBoundary extends React.Component {
   constructor(props){ super(props); this.state = { err: null, info: null }; }
@@ -48,7 +13,7 @@ class ErrorBoundary extends React.Component {
         <div style={{padding:16}}>
           <div style={{
             background:"#2a0f12", border:"1px solid #742c34", color:"#ffd7db",
-            borderRadius:12, padding:16, fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas"
+            borderRadius:12, padding:16, fontFamily:"inherit"
           }}>
             <div style={{fontWeight:700, marginBottom:8}}>Runtime error</div>
             <pre style={{whiteSpace:"pre-wrap"}}>{String(this.state.err?.message || this.state.err)}</pre>
@@ -63,9 +28,30 @@ class ErrorBoundary extends React.Component {
 
 
 const THEMES = {
-  sleek: { bg:"#0b1220", ink:"#e8eaed", muted:"#9aa7c2", card:"rgba(12,18,32,0.72)", cardBorder:"#1e2a45", chip:"#0f1a2f", chipActive:"#4ea1ff", accent:"#7aa2ff", accent2:"#00c2a8", axisInk:"#c7d2fe", quadFill:"rgba(122,162,255,0.10)", ring:"#32406b" },
-  dusk:  { bg:"#0e1224", ink:"#f1f4f9", muted:"#a9b5cf", card:"rgba(18,22,40,0.74)", cardBorder:"#263154", chip:"#141b33", chipActive:"#7aa2ff", accent:"#9bb6ff", accent2:"#ff7d8a", axisInk:"#d6e0ff", quadFill:"rgba(155,182,255,0.10)", ring:"#3a4a7d" },
-  light: { bg:"#f6f8ff", ink:"#0f172a", muted:"#5b6b8c", card:"#ffffffd6", cardBorder:"#e4ecff", chip:"#eef3ff", chipActive:"#4ea1ff", accent:"#4ea1ff", accent2:"#ff3b5c", axisInk:"#1d2a4b", quadFill:"rgba(78,161,255,0.08)", ring:"#cdd8ff" },
+  sleek: {
+    bg:"#07090f", ink:"#e9f4ff", muted:"#9fb2c8",
+    card:"rgba(8,12,20,0.74)", cardBorder:"#1a2636",
+    chip:"#0b1624", chipActive:"#2be7ff",
+    accent:"#2be7ff", accent2:"#7ef2b8",
+    axisInk:"#cfe2ff", quadFill:"rgba(43,231,255,0.12)", ring:"#2f435b",
+    grid:"rgba(255,255,255,0.04)", glow:"rgba(43,231,255,0.28)"
+  },
+  dusk: {
+    bg:"#0b0e17", ink:"#eef5ff", muted:"#a2b5c8",
+    card:"rgba(12,16,26,0.78)", cardBorder:"#223047",
+    chip:"#101a2a", chipActive:"#4de5c1",
+    accent:"#4de5c1", accent2:"#f6c453",
+    axisInk:"#d7e6ff", quadFill:"rgba(77,229,193,0.12)", ring:"#334a6a",
+    grid:"rgba(255,255,255,0.045)", glow:"rgba(77,229,193,0.26)"
+  },
+  light: {
+    bg:"#f4f7fb", ink:"#0c1220", muted:"#53617a",
+    card:"#ffffffd9", cardBorder:"#d7e4f2",
+    chip:"#edf3f9", chipActive:"#13bcd2",
+    accent:"#13bcd2", accent2:"#ffb347",
+    axisInk:"#24324b", quadFill:"rgba(19,188,210,0.12)", ring:"#c8d9e8",
+    grid:"rgba(8,25,50,0.08)", glow:"rgba(19,188,210,0.20)"
+  },
 };
 
 const POS14 = ["GK","D (R)","D (C)","D (L)","WB (R)","WB (L)","DM","M (R)","M (C)","M (L)","AM (R)","AM (C)","AM (L)","ST (C)"];
@@ -76,111 +62,238 @@ const POS_COLORS = {
   "AM (R)":"#ffb3cf","AM (C)":"#ff83ad","AM (L)":"#ffb3cf","ST (C)":"#ff8d7a"
 };
 const POS_BASE_TO_CENTER = { ST:"ST (C)", M:"M (C)", AM:"AM (C)", D:"D (C)" };
+const APP_MODES = [
+  "Player Profile","Player Database","Radar","Percentiles","Role Matrix","Stat Scatter","Custom Metrics",
+  "Role Leaders","Best Roles","Stat Leaders","Custom Archetype","Transfer Planner","Config"
+];
+const MODE_GROUPS = [
+  { label: "Player Analysis", modes: ["Player Profile", "Player Database", "Radar", "Percentiles"] },
+  { label: "Comparisons", modes: ["Role Matrix", "Stat Scatter", "Role Leaders", "Best Roles", "Stat Leaders"] },
+  { label: "Planning", modes: ["Transfer Planner", "Custom Archetype"] },
+  { label: "Tools", modes: ["Custom Metrics"] },
+  { label: "System", modes: ["Config"] }
+];
 
 function CSS(theme, themeName){
   return `
-@import url('https://fonts.googleapis.com/css2?family=Gabarito:wght@600;800&family=Inter:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 :root{
   --bg:${theme.bg}; --ink:${theme.ink}; --muted:${theme.muted};
   --card:${theme.card}; --cardBorder:${theme.cardBorder};
   --chip:${theme.chip}; --chipActive:${theme.chipActive};
   --accent:${theme.accent}; --accent2:${theme.accent2};
   --axisInk:${theme.axisInk}; --quadFill:${theme.quadFill}; --ring:${theme.ring};
+  --glow:${theme.glow}; --grid:${theme.grid};
+  --bgDeep: color-mix(in oklab, var(--bg), black 12%);
+  --bgLift: color-mix(in oklab, var(--bg), white 6%);
+  --surface: color-mix(in oklab, var(--bg), white 8%);
+  --surface2: color-mix(in oklab, var(--bg), white 4%);
 }
-*{ box-sizing:border-box; }
+*{ box-sizing:border-box; font-family: inherit; }
+input, select, button, textarea { font: inherit; }
 html,body,#root{ height:100%; }
 body{
   margin:0; color:var(--ink);
-  background: radial-gradient(1200px 800px at 20% -20%, ${themeName==="sleek"?"#141d2b": themeName==="dusk" ? "#141833" : "#ffffff"} 0%, var(--bg) 60%, var(--bg) 100%);
-  font-family: Gabarito, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
+  background:
+    radial-gradient(900px 600px at 0% -10%, var(--glow), transparent 60%),
+    radial-gradient(800px 520px at 110% 10%, color-mix(in oklab, var(--accent2) 45%, transparent), transparent 60%),
+    linear-gradient(180deg, var(--bgDeep) 0%, var(--bg) 55%, var(--bgDeep) 100%);
+  font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial;
   font-size: 15px;
+  position: relative;
+  overflow-x: hidden;
 }
 .app{ display:flex; flex-direction:column; min-height:100vh; }
+#root{ position:relative; z-index:1; }
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  background-image:
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 42px 42px;
+  opacity:0.25;
+  pointer-events:none;
+  z-index:0;
+}
+body::after{
+  content:"";
+  position:fixed;
+  inset:-30%;
+  background:
+    radial-gradient(420px 300px at 18% 20%, color-mix(in oklab, var(--accent) 40%, transparent) 0%, transparent 70%),
+    radial-gradient(420px 300px at 82% 25%, color-mix(in oklab, var(--accent2) 40%, transparent) 0%, transparent 70%);
+  filter: blur(40px);
+  opacity:0.55;
+  animation: glowDrift 18s ease-in-out infinite;
+  pointer-events:none;
+  z-index:0;
+}
+@keyframes glowDrift{
+  0%{ transform:translate3d(0,0,0); }
+  50%{ transform:translate3d(2%,-2%,0); }
+  100%{ transform:translate3d(0,0,0); }
+}
 .topbar{
   position:sticky; top:0; z-index:10;
   display:flex; align-items:center; gap:12px; padding:10px 16px;
-  background:color-mix(in oklab, var(--bg) 88%, black 0%); border-bottom:1px solid var(--cardBorder); backdrop-filter: blur(8px);
+  flex-wrap:wrap;
+  background:color-mix(in oklab, var(--bg) 78%, black 6%);
+  border-bottom:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 18%);
+  backdrop-filter: blur(12px) saturate(1.2);
+  box-shadow:0 12px 26px rgba(0,0,0,0.35);
 }
-.brand{ font-weight:800; letter-spacing:0.2px; }
+.topbar::after{
+  content:"";
+  position:absolute;
+  left:0; right:0; bottom:0;
+  height:1px;
+  background:linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity:0.6;
+}
+.brand{ font-weight:700; letter-spacing:0.22em; text-transform:uppercase; font-size:13px; }
+.brandStack{ display:flex; flex-direction:column; gap:2px; min-width:170px; }
+.brandSub{ font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.12em; text-transform:uppercase; }
 .spacer{ flex:1; }
-.tabs{ display:flex; gap:8px; margin-left:16px; overflow:auto; padding:6px 0; }
+.tabs{ display:flex; gap:6px; margin-left:4px; overflow:auto; padding:4px 0; flex:1; min-width:280px; }
 .tab{
-  border:1px solid var(--cardBorder); background:color-mix(in oklab, var(--bg), white 4%); color:var(--ink);
-  border-radius:999px; padding:9px 14px; cursor:pointer; white-space:nowrap; font-size:14px;
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%);
+  background:linear-gradient(180deg, var(--surface), var(--bg));
+  color:var(--ink);
+  border-radius:10px;
+  padding:7px 11px;
+  cursor:pointer;
+  white-space:nowrap;
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:0.14em;
+  text-transform:uppercase;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
-.tab:hover{ box-shadow: inset 0 0 0 1px var(--ring); }
-.tab.active{ border-color:var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tab:hover{ box-shadow:0 6px 14px color-mix(in oklab, var(--accent) 18%, transparent); transform: translateY(-1px); }
+.tab.active{
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent), 0 10px 20px color-mix(in oklab, var(--accent) 24%, transparent);
+  background:linear-gradient(135deg, color-mix(in oklab, var(--accent) 28%, transparent), color-mix(in oklab, var(--accent2) 22%, transparent));
+}
+.modeSelect{ display:none; min-width:220px; max-width:340px; }
 .seg{ display:flex; gap:8px; }
+.topStats{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.statChip{ font-size:9px; padding:4px 9px; border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 8%); border-radius:999px; background:linear-gradient(90deg, var(--surface2), transparent); color:var(--muted); letter-spacing:0.12em; text-transform:uppercase; }
 .segBtn{
-  border:1px solid var(--cardBorder); background:color-mix(in oklab, var(--bg), white 4%); color:var(--ink);
-  border-radius:999px; padding:8px 12px; cursor:pointer;
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%);
+  background:linear-gradient(180deg, var(--surface2), transparent);
+  color:var(--ink);
+  border-radius:10px;
+  padding:7px 10px;
+  cursor:pointer;
+  font-size:10px;
+  letter-spacing:0.12em;
+  text-transform:uppercase;
 }
-.segBtn.active{ border-color:var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.btn{ padding:10px 14px; border-radius:12px; border:1px solid var(--accent); background:var(--accent); color:white; cursor:pointer; font-weight:700; }
-.btn.ghost{ background:transparent; color:var(--accent); border-color:var(--accent); }
+.segBtn.active{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 6px 16px color-mix(in oklab, var(--accent) 18%, transparent); }
+.btn{
+  padding:10px 14px;
+  border-radius:12px;
+  border:1px solid color-mix(in oklab, var(--accent) 70%, var(--cardBorder));
+  background:linear-gradient(135deg, color-mix(in oklab, var(--accent) 80%, white 6%), color-mix(in oklab, var(--accent2) 70%, black 6%));
+  color:white;
+  cursor:pointer;
+  font-weight:600;
+  letter-spacing:0.02em;
+  box-shadow:0 10px 22px color-mix(in oklab, var(--accent) 30%, transparent);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.btn:hover{ transform: translateY(-1px); filter: brightness(1.05); }
+.btn.ghost{ background:transparent; color:var(--accent); border-color:color-mix(in oklab, var(--accent) 60%, var(--cardBorder)); box-shadow:none; }
 .btn.ghost.tight{ padding:6px 10px; }
-.btn.ghost.alt{ color:var(--accent2); border-color:var(--accent2); }
-.input{ width:100%; padding:11px 12px; border-radius:12px; border:1px solid var(--cardBorder); background:color-mix(in oklab, var(--bg), white 4%); color:var(--ink); outline:none; font-size:14px; box-sizing:border-box; position:relative; z-index:10; }
-.input:focus{ box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 24%, transparent); border-color:var(--accent); z-index:15; }
+.btn.ghost.alt{ color:var(--accent2); border-color:color-mix(in oklab, var(--accent2) 60%, var(--cardBorder)); }
+.input{ width:100%; padding:11px 12px; border-radius:12px; border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 8%); background:linear-gradient(180deg, var(--surface), var(--surface2)); color:var(--ink); outline:none; font-size:14px; box-sizing:border-box; position:relative; z-index:10; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06); }
+.input:focus{ box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent), 0 0 24px color-mix(in oklab, var(--accent) 24%, transparent); border-color:var(--accent); z-index:15; }
 select.input{ min-width:0; max-width:100%; }
 .sectionBody .input{ width:100%; min-width:0; }
 .lbl{ font-size:12px; color:var(--muted); margin-bottom:4px; display:block; }
 
-.playerBar{ position:sticky; top:54px; z-index:9; background:var(--card); border-bottom:1px solid var(--cardBorder); max-height:200px; overflow:visible; }
+.playerBar{ position:sticky; top:54px; z-index:9; background:linear-gradient(180deg, color-mix(in oklab, var(--card) 92%, white 6%), var(--card)); border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%); border-radius:14px; overflow:hidden; }
 .playerHeader{
-  display:grid; grid-template-columns: 1fr; gap:6px;
-  padding:6px 8px; overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:stretch;
+  padding:10px 12px;
   white-space:normal;
 }
-.playerHeaderTop{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-left:2px; overflow:hidden; }
-.phName{
-  font-weight:800; padding:4px 8px; border-radius:6px; font-size:14px;
-  background:color-mix(in oklab, var(--bg), white 6%); border:1px solid var(--cardBorder);
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; 
-  max-width:200px; min-width:0; flex-shrink:1;
+.playerHeadingMain{ min-width:0; }
+.playerHeadingName{ font-size:24px; line-height:1.1; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.playerHeadingSub{ margin-top:3px; font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:8px; }
+.playerMetaRow{ display:flex; gap:8px; flex-wrap:nowrap; margin-top:8px; overflow-x:auto; overflow-y:hidden; padding-bottom:2px; scrollbar-width:thin; }
+.playerPill{ font-size:9px; padding:4px 8px; border-radius:999px; border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%); background:linear-gradient(90deg, var(--surface2), transparent); white-space:nowrap; flex:0 0 auto; letter-spacing:0.12em; text-transform:uppercase; }
+.playerFacts{
+  display:flex;
+  gap:8px;
+  min-width:0;
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding-bottom:2px;
+  scrollbar-width:thin;
 }
-.badge{ font-size:10px; padding:2px 5px; border-radius:999px; border:1px solid var(--cardBorder); background:color-mix(in oklab, var(--bg), white 6%); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100px; }
-.phKpis{
-  display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap:4px; padding:0 4px 4px 4px;
+.playerFact{
+  flex:0 0 auto;
+  min-width:118px;
+  padding:6px 8px;
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%);
+  border-radius:10px;
+  background:linear-gradient(180deg, var(--surface2), transparent);
 }
-.phKpi{
-  display:flex; align-items:center; justify-content:space-between; gap:3px;
-  background:color-mix(in oklab, var(--bg), white 6%); border:1px solid var(--cardBorder);
-  border-radius:6px; padding:4px 6px; min-height:28px; position:relative; font-size:11px;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+.playerFactLabel{ font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
+.playerFactValue{ margin-top:2px; font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.playerFactValue.alert{ color:var(--accent2); }
+.badge{ font-size:9px; padding:3px 6px; border-radius:999px; border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%); background:linear-gradient(90deg, var(--surface2), transparent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px; letter-spacing:0.12em; text-transform:uppercase; }
+
+@media(max-width:1100px){
+  .playerFacts{ border-top:1px solid var(--cardBorder); padding-top:8px; }
 }
-.phKpi div:first-child{ color:var(--muted); }
-.phKpi b{ font-weight:700; }
+
+@media(max-width:640px){
+  .playerHeadingName{ font-size:21px; }
+  .playerFact{ min-width:108px; }
+}
 
 .statRow{
   display:flex; justify-content:space-between; align-items:center; padding:8px 0; 
-  border-bottom:1px solid color-mix(in oklab, var(--border), transparent 50%);
+  border-bottom:1px solid color-mix(in oklab, var(--cardBorder), transparent 50%);
 }
 .statRow:last-child{ border-bottom:none; }
 
-.wrap{ display:grid; grid-template-columns: 400px 1fr; gap:0; max-width:2000px; margin:0 auto; width:100%; min-height:100vh; transition: grid-template-columns 0.3s ease; }
+.wrap{ display:grid; grid-template-columns: 440px 1fr; gap:0; max-width:2000px; margin:0 auto; width:100%; min-height:100vh; transition: grid-template-columns 0.3s ease; }
 .wrap.collapsed{ grid-template-columns: 60px 1fr; }
 @media(max-width:1200px){ .wrap{ grid-template-columns:1fr; } .wrap.collapsed{ grid-template-columns:1fr; } }
+@media(max-width:1180px){
+  .tabs{ display:none; }
+  .modeSelect{ display:block; }
+  .seg{ margin-left:auto; }
+  .topStats{ display:none; }
+}
 .side{ 
   display:flex; 
   flex-direction:column; 
-  gap:16px; 
+  gap:10px; 
   min-width:0; 
   align-items:stretch; 
   position:sticky; 
-  top:0; 
-  height:100vh; 
+  top:56px; 
+  height:calc(100vh - 56px); 
   overflow-y:auto; 
-  background:var(--card); 
-  border-right:1px solid var(--cardBorder); 
-  padding:16px 20px;
+  background:linear-gradient(180deg, color-mix(in oklab, var(--card) 92%, white 6%), var(--card)); 
+  border-right:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%); 
+  padding:10px 12px;
   box-sizing:border-box;
-  z-index: 100;
+  z-index: 6;
   transition: padding 0.3s ease, width 0.3s ease;
 }
 .side.collapsed{ 
-  padding:16px 8px; 
+  padding:10px 6px; 
   overflow:hidden; 
   width:60px;
 }
@@ -194,9 +307,9 @@ select.input{ min-width:0; max-width:100%; }
   bottom: 20px;
   left: 20px;
   z-index: 200;
-  background: var(--cardBg);
-  color: var(--text);
-  border: 1px solid var(--cardBorder);
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 20%);
   border-radius: 50%;
   width: 40px;
   height: 40px;
@@ -210,57 +323,150 @@ select.input{ min-width:0; max-width:100%; }
   backdrop-filter: blur(10px);
 }
 .toggle-sidebar:hover {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
   color: white;
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+  box-shadow: 0 8px 22px color-mix(in oklab, var(--accent) 25%, transparent);
 }
 .main{ display:flex; flex-direction:column; gap:12px; min-width:0; padding:12px 16px; overflow:visible; min-height:100vh; }
+@keyframes riseIn{ from{ opacity:0; transform: translateY(6px);} to{ opacity:1; transform: translateY(0);} }
+.main .card{ animation: riseIn 0.45s ease both; }
 
 .section{
-  background:var(--card); border:1px solid var(--cardBorder); border-radius:16px; overflow:visible; box-shadow:0 12px 24px rgba(0,0,0,0.25);
-  margin: 16px 0;
+  background:linear-gradient(180deg, color-mix(in oklab, var(--card) 92%, white 6%), var(--card));
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%); border-radius:16px; overflow:visible;
+  box-shadow:0 12px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.06);
+  margin: 8px 0;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   position: relative;
   z-index: 1;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.sectionHead{ padding:12px 16px; font-weight:800; border-bottom:1px solid var(--cardBorder); background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0)); width:100%; box-sizing:border-box; font-size:14px; }
-.sectionBody{ padding:16px 20px 32px 20px; display:flex; flex-direction:column; gap:16px; overflow:visible; width:100%; box-sizing:border-box; }
+.section:hover{ border-color:color-mix(in oklab, var(--accent) 40%, var(--cardBorder)); box-shadow:0 16px 30px rgba(0,0,0,0.32), 0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent); }
+.sectionHead{ padding:9px 12px; font-weight:700; border-bottom:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 8%); background:linear-gradient(90deg, color-mix(in oklab, var(--bg), white 6%), transparent); width:100%; box-sizing:border-box; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; }
+.sectionBody{ padding:10px 12px 12px 12px; display:flex; flex-direction:column; gap:10px; overflow:visible; width:100%; box-sizing:border-box; }
 
 .card{
-  background:var(--card); border:1px solid var(--cardBorder); border-radius:18px; overflow:hidden; box-shadow:0 16px 32px rgba(0,0,0,0.3);
+  background:linear-gradient(180deg, color-mix(in oklab, var(--card) 94%, white 6%), var(--card));
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%); border-radius:18px; overflow:hidden; box-shadow:0 16px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.cardHead{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--cardBorder); background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0)); font-size:16px; }
+.card:hover{ border-color:color-mix(in oklab, var(--accent) 32%, var(--cardBorder)); box-shadow:0 20px 36px rgba(0,0,0,0.36), 0 0 0 1px color-mix(in oklab, var(--accent) 16%, transparent); }
+.cardHead{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%); background:linear-gradient(90deg, color-mix(in oklab, var(--bg), white 6%), transparent); font-size:16px; }
+.cardHeader{ padding:14px 16px; border-bottom:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%); background:linear-gradient(90deg, color-mix(in oklab, var(--bg), white 6%), transparent); font-size:12px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; }
 .cardBody{ padding:16px; }
-.row{ display:flex; gap:12px; align-items:center; }
+.row{ display:flex; gap:8px; align-items:center; }
 .col{ flex:1; min-width:0; }
 
+.statFilterList{ display:flex; flex-direction:column; gap:8px; min-width:0; }
+.statFilterRow{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 84px minmax(100px, 120px);
+  gap:8px;
+  align-items:center;
+  min-width:0;
+}
+.statFilterRow .input{ min-width:0; width:100%; }
+.statFilterRow .statFilterRemove{ grid-column:1 / -1; justify-self:end; }
+
 .table{ width:100%; border-collapse:collapse; font-size:14px; table-layout:fixed; }
-.table th, .table td{ padding:8px 10px; border-bottom:1px solid var(--cardBorder); text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:0; }
+.table th, .table td{ padding:8px 10px; border-bottom:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 6%); text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:0; }
+.table th{ font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); }
 .table th:first-child, .table td:first-child{ min-width:120px; max-width:180px; }
-.scroll{ overflow:auto; border:1px solid var(--cardBorder); border-radius:12px; max-height:400px; }
+.table tbody tr:nth-child(odd){ background:color-mix(in oklab, var(--bg), white 3%); }
+.table tbody tr:hover{ background:color-mix(in oklab, var(--chip), var(--accent) 8%); }
+.scroll{ overflow:auto; border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 8%); border-radius:12px; max-height:400px; }
+
+.modeDomainRow{ display:flex; gap:6px; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; }
+.modeDomainBtn{
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%);
+  background:linear-gradient(180deg, var(--surface), var(--surface2));
+  color:var(--ink);
+  border-radius:6px;
+  padding:4px 8px;
+  font-size:9px;
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+  white-space:nowrap;
+  cursor:pointer;
+}
+.modeDomainBtn:hover{ border-color:var(--ring); }
+.modeDomainBtn.active{ border-color:var(--accent); background:linear-gradient(135deg, color-mix(in oklab, var(--accent) 28%, transparent), color-mix(in oklab, var(--accent2) 22%, transparent)); color:white; }
 
 .chipRow{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; max-width:100%; overflow:hidden; }
-.chip{ border:1px solid var(--cardBorder); background:var(--chip); color:var(--ink); border-radius:999px; padding:6px 10px; cursor:pointer; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px; }
-.chip.active{ background:var(--chipActive); color:white; border-color:transparent; }
+.chip{ border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%); background:linear-gradient(180deg, var(--surface2), var(--chip)); color:var(--ink); border-radius:999px; padding:6px 10px; cursor:pointer; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px; }
+.chip.active{ background:linear-gradient(135deg, color-mix(in oklab, var(--accent) 65%, transparent), color-mix(in oklab, var(--accent2) 35%, transparent)); color:white; border-color:transparent; }
+
+.dbToolbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
+.dbSelectedStatRow{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.dbSelectedStat{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:5px 10px;
+  border-radius:999px;
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%);
+  background:linear-gradient(180deg, var(--surface2), transparent);
+  font-size:11px;
+}
+.dbSelectedStat button{
+  border:none;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+  font-size:11px;
+  padding:0;
+  line-height:1;
+}
+.dbCardGrid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:10px; }
+.dbPlayerCard{
+  text-align:left;
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%);
+  border-radius:14px;
+  background:linear-gradient(180deg, color-mix(in oklab, var(--card) 95%, white 6%), var(--card));
+  color:var(--ink);
+  padding:12px;
+  cursor:pointer;
+  transition:border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.dbPlayerCard:hover{
+  border-color:var(--accent);
+  box-shadow:0 12px 24px color-mix(in oklab, var(--accent) 20%, transparent);
+  transform:translateY(-1px);
+}
+.dbCardHeader{ margin-bottom:8px; }
+.dbCardName{ font-size:14px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dbCardMeta{ font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dbCardStats{ display:grid; grid-template-columns:repeat(auto-fill, minmax(110px, 1fr)); gap:8px; }
+.dbCardStat{ border:1px solid color-mix(in oklab, var(--cardBorder), transparent 35%); border-radius:10px; padding:6px 8px; background:linear-gradient(180deg, var(--surface2), transparent); }
+.dbCardStatLabel{ font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dbCardStatValue{ margin-top:3px; font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dbCardFooter{ margin-top:10px; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.12em; }
+
+@media(max-width:640px){
+  .dbCardStats{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
+}
 
 .chartWrap{ width:100%; max-width:100%; overflow:hidden; }
 .d3tip{
-  max-width: 300px; background: color-mix(in oklab, var(--bg) 92%, black 0%);
-  border:1px solid var(--cardBorder); border-radius: 12px; padding: 10px 12px; color: var(--ink);
-  filter: drop-shadow(0 12px 18px rgba(0,0,0,0.35)); backdrop-filter: blur(6px); z-index: 1000; font-size:12px;
+  max-width: 300px; background: linear-gradient(180deg, color-mix(in oklab, var(--bg) 92%, white 4%), color-mix(in oklab, var(--bg) 92%, black 2%));
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%); border-radius: 12px; padding: 10px 12px; color: var(--ink);
+  filter: drop-shadow(0 12px 18px rgba(0,0,0,0.35)); backdrop-filter: blur(10px); z-index: 1000; font-size:12px;
   word-wrap:break-word; overflow-wrap:break-word;
 }
 .d3tip .t-title{ font-weight:800; margin-bottom:6px; display:flex; gap:8px; align-items:center; }
-.d3tip .t-badge{ margin-left:8px; font-size:10px; font-weight:700; color:var(--accent); background:rgba(78,161,255,0.12); border:1px solid rgba(78,161,255,0.35); padding:2px 6px; border-radius:999px; }
+.d3tip .t-badge{ margin-left:8px; font-size:9px; font-weight:700; color:var(--accent); background:color-mix(in oklab, var(--accent) 18%, transparent); border:1px solid color-mix(in oklab, var(--accent) 40%, transparent); padding:2px 6px; border-radius:999px; letter-spacing:0.12em; text-transform:uppercase; }
 .d3tip .t-row{ display:flex; justify-content:space-between; gap:12px; font-size:11px; padding:2px 0; }
 
 .status{ font-size:12px; color:var(--muted); }
 .legendRow{ display:flex; flex-wrap:wrap; gap:10px; margin:8px 0 2px; }
 .legendItem{ display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
 .legendSwatch{ width:12px; height:12px; border-radius:3px; border:1px solid color-mix(in oklab, black 18%, transparent); }
+*::-webkit-scrollbar{ width:8px; height:8px; }
+*::-webkit-scrollbar-thumb{ background:color-mix(in oklab, var(--accent) 35%, var(--cardBorder)); border-radius:999px; }
+*::-webkit-scrollbar-track{ background:color-mix(in oklab, var(--bg), white 2%); }
 .deltaUp{ color:#18c27a; } .deltaDown{ color:#ff7d8a; }
 `;
 }
@@ -293,7 +499,7 @@ const RENAME_MAP = new Map(Object.entries({
   "OP-Crs A/90":"OP Crosses Attempted/90","OP-Crs A":"OP Crosses Attempted","OP-Cr %":"OP Cross Completion Ratio",
   "Off":"Offsides","Gl Mst":"Mistakes Leading to Goal","MLG":"Mistakes Leading to Goal","K Tck/90":"Key Tackles/90","K Tck":"Key Tackles",
   "K Ps/90":"Key Passes/90","K Pas":"Key Passes","K Hdrs/90":"Key Headers/90","Int/90":"Interceptions/90","Itc":"Interceptions",
-  "Sprints/90":"Sprint/90","Hdr %":"Header Win Rate","Hdrs W/90":"Headers won/90","Hdrs":"Headers","Hdrs L/90":"Headers Lost/90",
+  "Sprints/90":"High Intensity Sprints/90","Sprint/90":"High Intensity Sprints/90","Hdr %":"Header Win Rate","Hdrs W/90":"Headers won/90","Hdrs":"Headers","Hdrs L/90":"Headers Lost/90",
   "Goals Outside Box":"Goals Outside Box","xGP/90":"Expected Goals Prevented/90","xGP":"Expected Goals Prevented","NP-xG":"NP-xG","NP-xG/90":"NP-xG/90","xG-OP":"xG Overperformance",
   "Drb/90":"Dribbles/90","Drb":"Dribbles","Distance":"Distance Covered (KM)","Dist/90":"Distance Covered/90","Cr C/90":"Crosses Completed/90","Cr C":"Crosses Completed",
   "Crs A/90":"Crosses Attempted/90","Cr A":"Crosses Attempted","Cr C/A":"Cross Completion Ratio","Conv %":"Conversion Rate",
@@ -340,6 +546,105 @@ const numerify = (v) => {
   const num = Number(s);
   return Number.isFinite(num) ? num * mult : NaN;
 };
+
+const parseHeightToInches = (v) => {
+  if (v === null || v === undefined) return NaN;
+  const raw = String(v).trim().toLowerCase();
+  if (!raw) return NaN;
+  const cmMatch = raw.match(/(\d+(?:\.\d+)?)\s*cm/);
+  if (cmMatch) return Number(cmMatch[1]) / 2.54;
+  const mMatch = raw.match(/(\d+(?:\.\d+)?)\s*m/);
+  if (mMatch) return Number(mMatch[1]) * 39.3701;
+  const ftInMatch = raw.match(/(\d+)\s*(?:ft|feet|')\s*(\d+)?\s*(?:in|"|''|”)?/);
+  if (ftInMatch) {
+    const ft = Number(ftInMatch[1]);
+    const inch = Number(ftInMatch[2] || 0);
+    return ft * 12 + inch;
+  }
+  const dashMatch = raw.match(/(\d+)\s*[-]\s*(\d+)/);
+  if (dashMatch && Number(dashMatch[1]) >= 4 && Number(dashMatch[1]) <= 8) {
+    return Number(dashMatch[1]) * 12 + Number(dashMatch[2]);
+  }
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    const n = Number(raw);
+    if (n > 100) return n / 2.54;
+    if (n > 3 && n < 9) return n * 12;
+    return n;
+  }
+  const nums = raw.match(/\d+/g);
+  if (nums && nums.length >= 2 && Number(nums[0]) >= 4 && Number(nums[0]) <= 8) {
+    return Number(nums[0]) * 12 + Number(nums[1]);
+  }
+  if (nums && nums.length === 1) {
+    const n = Number(nums[0]);
+    if (n > 100) return n / 2.54;
+    return n;
+  }
+  return NaN;
+};
+
+function averageNumericValue(rows, candidateColumns) {
+  const values = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    for (const column of candidateColumns) {
+      const value = numerify(getCell(row, column));
+      if (Number.isFinite(value)) {
+        values.push(value);
+        break;
+      }
+    }
+  }
+  if (!values.length) return NaN;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function compareNumeric(lhs, op, rhs) {
+  if (!Number.isFinite(lhs) || !Number.isFinite(rhs)) return false;
+  switch (op) {
+    case ">": return lhs > rhs;
+    case "<": return lhs < rhs;
+    case "<=": return lhs <= rhs;
+    case "=": return Math.abs(lhs - rhs) < 1e-9;
+    case ">=":
+    default: return lhs >= rhs;
+  }
+}
+
+function resolveFilterMetricValue(row, statName, valueMode, percentileIndex, metricResolver) {
+  const rawValue = metricResolver(row, statName);
+  if (valueMode === "percentile") {
+    return percentileFor(percentileIndex, statName, rawValue);
+  }
+  return rawValue;
+}
+
+function evaluateStatFilterGroup(rows, filters, options) {
+  const {
+    logic = "AND",
+    valueMode = "raw",
+    percentileIndex = null,
+    metricResolver = (row, statName) => numerify(getCell(row, statName))
+  } = options || {};
+  const activeFilters = (Array.isArray(filters) ? filters : [])
+    .map(f => ({
+      stat: String(f?.stat || ""),
+      op: String(f?.op || ">="),
+      value: String(f?.value ?? "").trim()
+    }))
+    .filter(f => f.stat && f.value !== "" && Number.isFinite(Number(f.value)));
+  if (!activeFilters.length) return Array.isArray(rows) ? rows : [];
+
+  const matchFilter = (row, filter) => {
+    const lhs = resolveFilterMetricValue(row, filter.stat, valueMode, percentileIndex, metricResolver);
+    const rhs = Number(filter.value);
+    return compareNumeric(lhs, filter.op, rhs);
+  };
+
+  return (Array.isArray(rows) ? rows : []).filter(row => {
+    const results = activeFilters.map(filter => matchFilter(row, filter));
+    return logic === "OR" ? results.some(Boolean) : results.every(Boolean);
+  });
+}
 
 const CUSTOM_METRIC_OPERATIONS = [
   { value: "add", label: "A + B" },
@@ -597,6 +902,24 @@ function normalizeHeadersRowObjects(rows) {
   if (!rows || !rows.length) return [];
   const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
   const resolved = new Map(); for (const c of cols) resolved.set(c, mapHeaderName(c));
+
+  const isBlankish = (value) => {
+    if (value === null || value === undefined) return true;
+    const text = String(value).trim();
+    return !text || /^[-–—\s]+$/.test(text) || /^n\/a$/i.test(text) || /^none$/i.test(text);
+  };
+
+  const pickMergedValue = (existing, incoming) => {
+    if (existing === undefined) return incoming;
+    if (isBlankish(incoming)) return existing;
+    if (isBlankish(existing)) return incoming;
+
+    const existingNum = numerify(existing);
+    const incomingNum = numerify(incoming);
+    if (Number.isFinite(incomingNum) && !Number.isFinite(existingNum)) return incoming;
+    return existing;
+  };
+
   return rows.map(r => {
     const o = {};
     for (const [k, v] of Object.entries(r)) {
@@ -607,8 +930,15 @@ function normalizeHeadersRowObjects(rows) {
       if (normalizedKey === "Name" && typeof normalizedValue === "string") {
         normalizedValue = normalizePlayerName(normalizedValue);
       }
-      
-      o[normalizedKey] = normalizedValue;
+
+      o[normalizedKey] = pickMergedValue(o[normalizedKey], normalizedValue);
+    }
+    const nat = String(o["Nat"] || "").trim();
+    const secondNat = String(o["2nd Nat"] || "").trim();
+    const normNat = keyNorm(nat);
+    const normSecond = keyNorm(secondNat);
+    if (!secondNat || /^[-–—\s]+$/.test(secondNat) || /^none$/i.test(secondNat) || /^n\/a$/i.test(secondNat) || (normSecond && normSecond === normNat)) {
+      o["2nd Nat"] = "";
     }
     return o;
   });
@@ -648,14 +978,23 @@ function expandFMPositions(posStr) {
   const parts = String(posStr).split(",").map(p => p.trim()).filter(Boolean);
   const out = new Set();
   for (const p of parts) {
-    const m = p.match(/^([A-Za-z]{1,3})\s*\(([^)]+)\)$/);
-    if (m) {
-      const base = m[1].toUpperCase();
-      const ins = (m[2] || "").toUpperCase().replace(/[^A-Z]/g, "");
-      if (ins) [...ins].forEach(ch => out.add(`${base} (${ch})`));
-      else out.add(base);
-    } else {
-      out.add(p.toUpperCase());
+    const compact = String(p).replace(/\s+/g, "").toUpperCase();
+    const m = compact.match(/^([A-Z]+(?:\/[A-Z]+)*)(?:\(+([A-Z]+)\)+)?$/);
+    if (!m) {
+      out.add(compact);
+      continue;
+    }
+
+    const bases = m[1].split("/").filter(Boolean);
+    const letters = Array.from(new Set((m[2] || "").replace(/[^RLC]/g, "").split("")));
+    if (!letters.length) {
+      for (const base of bases) out.add(POS_BASE_TO_CENTER[base] || base);
+      continue;
+    }
+
+    const orderedLetters = ["C", "R", "L"].filter(letter => letters.includes(letter));
+    for (const base of bases) {
+      for (const letter of orderedLetters) out.add(`${base} (${letter})`);
     }
   }
   return Array.from(out);
@@ -667,6 +1006,16 @@ const normToken = (t) => {
   return POS_BASE_TO_CENTER[s] || s;
 };
 function sharesAny(list, allowed){ const set = new Set(list.map(normToken)); for (const a of allowed) if (set.has(normToken(a))) return true; return false; }
+function primaryFMPosition(posStr) {
+  const expanded = expandFMPositions(posStr);
+  if (expanded.length) return expanded[0];
+  const first = String(posStr || "").split(",")[0]?.trim().toUpperCase();
+  return POS_BASE_TO_CENTER[first] || first || "";
+}
+function isPrimaryStrikerPosition(posStr) {
+  const p = primaryFMPosition(posStr);
+  return p === "ST" || p === "ST (C)";
+}
 
 /* ===================== Role Book (expanded) ===================== */
 const ROLE_BOOK = {
@@ -808,7 +1157,28 @@ const ROLE_BOOK = {
     baseline: ["ST","ST (C)"],
     weights: {
       "Headers won/90": 1.8, "Header Win Rate": 1.7, "Aerial Duels Attempted/90": 1.6,
-      "Shots/90": 1.2, "SoT/90": 1.1, "Key Passes/90": 1.0
+      "Shots/90": 1.2, "SoT/90": 1.1, "Key Passes/90": 1.0,
+      "Goals / 90": 1.4
+    }
+  },
+  "ST — Pressing Forward": {
+    baseline: ["ST","ST (C)"],
+    weights: {
+      "Pressures Completed/90": 2.6,
+      "Tackles/90": 2.3,
+      "Interceptions/90": 2.2,
+      "High Intensity Sprints/90": 2.4,
+      "Shot on Target Ratio": 1.7,
+      "Goals / 90": 1.9
+    }
+  },
+  "ST — False 9": {
+    baseline: ["ST","ST (C)"],
+    weights: {
+      "OP Key Passes/90": 1.7, "Key Passes/90": 1.5, "Chances Created/90": 1.6,
+      "Progressive Passes/90": 1.3, "Dribbles/90": 1.3,
+      "Shots/90": 1.1, "SoT/90": 1.1, "Goals / 90": 1.3,
+      "xA/90": 1.4
     }
   }
 };
@@ -834,6 +1204,8 @@ function getCell(obj, name) {
     const fromKn = keyNorm(from);
     for (const k of Object.keys(obj)) if (keyNorm(k) === fromKn) return obj[k];
   }
+  const canonicalName = mapHeaderName(name);
+  if (canonicalName && canonicalName in obj) return obj[canonicalName];
   for (const k of Object.keys(obj)) if (keyNorm(k) === kn) return obj[k];
   return undefined;
 }
@@ -842,19 +1214,57 @@ function numCell(obj, name) {
   const n = numerify(raw);
   return Number.isFinite(n) ? n : NaN;
 }
+
+function resolveStatKey(stat, pctIndex) {
+  if (!pctIndex) return stat;
+  if (pctIndex.has(stat)) return stat;
+
+  const mapped = mapHeaderName(stat);
+  if (mapped && pctIndex.has(mapped)) return mapped;
+
+  const wanted = keyNorm(stat);
+  for (const key of pctIndex.keys()) {
+    if (keyNorm(key) === wanted) return key;
+  }
+
+  return stat;
+}
+
 function buildPercentileIndex(rows, statList) {
   const out = new Map();
   const list = statList || ALL_ROLE_STATS;
   for (const stat of list) {
     const vals = rows.map(r => numCell(r, stat)).filter(Number.isFinite).sort((a,b)=>a-b);
     out.set(stat, vals);
+    const mapped = mapHeaderName(stat);
+    if (mapped && mapped !== stat) {
+      out.set(mapped, vals);
+    }
+  }
+  return out;
+}
+function buildRolePercentileByRole(rows, fallbackRows = null) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const fallback = Array.isArray(fallbackRows) ? fallbackRows : sourceRows;
+  const out = {};
+  for (const role of Object.keys(ROLE_BOOK)) {
+    const baseline = ROLE_BASELINES[role] || [];
+    let roleRows = sourceRows;
+    if (baseline.length) {
+      roleRows = sourceRows.filter(r => sharesAny(expandFMPositions(getCell(r, "Pos")), baseline));
+    }
+    // Keep role percentiles meaningful when the cohort is tiny.
+    if (roleRows.length <= 1) roleRows = fallback;
+    const roleStats = ROLE_STATS[role] || Object.keys(ROLE_WEIGHTS[role] || {});
+    out[role] = buildPercentileIndex(roleRows, roleStats);
   }
   return out;
 }
 function percentileFor(pctIndex, stat, value) {
-  const arrAsc = pctIndex.get(stat) || [];
+  const resolvedStat = resolveStatKey(stat, pctIndex);
+  const arrAsc = pctIndex.get(resolvedStat) || [];
   if (!arrAsc.length || !Number.isFinite(value)) return NaN;
-  const less = LESS_IS_BETTER.has(stat);
+  const less = LESS_IS_BETTER.has(resolvedStat) || LESS_IS_BETTER.has(stat);
   let l = 0, r = arrAsc.length;
   while (l < r) { const m = (l + r) >> 1; if (arrAsc[m] < value) l = m + 1; else r = m; }
   const lo = l; l = 0; r = arrAsc.length;
@@ -866,24 +1276,39 @@ function percentileFor(pctIndex, stat, value) {
 }
 
 /* ===================== Role scoring ===================== */
-function roleScoreFor(row, roleName, pctIndex) {
+function roleScoreFor(row, roleName, pctIndex, rolePctByRole = null) {
   const weights = typeof roleName === "string" ? ROLE_WEIGHTS[roleName] : (roleName?.weights||null);
   if (!weights) return 0;
-  let sumW = 0, sum = 0;
+  const scoringPctIndex = (typeof roleName === "string" && rolePctByRole && rolePctByRole[roleName])
+    ? rolePctByRole[roleName]
+    : pctIndex;
+  let posW = 0, sum = 0;
   for (const [stat, w] of Object.entries(weights)) {
     const v = numCell(row, stat);
-    const pct = percentileFor(pctIndex, stat, v);
-    if (Number.isFinite(pct)) { sum += pct * w; sumW += w; }
+    const pct = percentileFor(scoringPctIndex, stat, v);
+    if (!Number.isFinite(pct)) continue;
+    if (w >= 0) {
+      sum += pct * w;
+      posW += w;
+      continue;
+    }
+    // Explicit negative weights should punish winger-like traits only when they are above median.
+    const penaltyPct = Math.max(0, pct - 50) * 2; // 0..100
+    sum += penaltyPct * w;
   }
-  return sumW > 0 ? sum / sumW : 0;
+  let score = posW > 0 ? (sum / posW) : 0;
+  if (typeof roleName === "string" && roleName.startsWith("ST —") && !isPrimaryStrikerPosition(getCell(row, "Pos"))) {
+    score -= 20;
+  }
+  return clamp100(score);
 }
-function bestNearRole(row, pctIndex) {
+function bestNearRole(row, pctIndex, rolePctByRole = null) {
   const tokens = expandFMPositions(getCell(row, "Pos"));
   let best = null, bestScore = -1;
   for (const role of Object.keys(ROLE_BOOK)) {
     const baseline = ROLE_BASELINES[role] || [];
     if (!sharesAny(tokens, baseline)) continue;
-    const sc = roleScoreFor(row, role, pctIndex);
+    const sc = roleScoreFor(row, role, pctIndex, rolePctByRole);
     if (sc > bestScore) { bestScore = sc; best = role; }
   }
   return { role: best, score: clamp100(bestScore) };
@@ -915,11 +1340,11 @@ function makeUnion(list){ return new RegExp("\\b(" + list.map(ESC).join("|") + "
 
 const GROUP_PATTERNS = {
   elite: [
-    "Premier League","LALIGA EA SPORTS","LaLiga EA SPORTS","Bundesliga","Serie A","Serie A TIM","Ligue 1 Uber Eats",
+    "Premier League","LALIGA EA SPORTS","LaLiga EA SPORTS","La Liga","LaLiga","Primera División","Primera Division","Spanish First Division","Bundesliga","Serie A","Serie A TIM","Ligue 1","Ligue 1 Uber Eats","Ligue 1 McDonald's","Ligue 1 McDonalds",
     "Eredivisie","Brasileirão Assaí Série A","Brasileirao Assai Serie A","Liga MX"
   ],
   strong: [
-    "Sky Bet Championship","Championship","2. Bundesliga","LaLiga Hypermotion","Serie BKT","Ligue 2 BKT","Keuken Kampioen Divisie",
+    "Sky Bet Championship","Championship","2. Bundesliga","2 Bundesliga","Bundesliga 2","LaLiga 2","La Liga 2","LaLiga Hypermotion","LALIGA HYPERMOTION","LaLiga SmartBank","Liga SmartBank","Segunda División","Segunda Division","Serie BKT","Ligue 2","Ligue 2 BKT","Keuken Kampioen Divisie",
     "Liga Portugal Betclic","Jupiler Pro League","cinch Premiership","Admiral Bundesliga","Super League (Greece)","Super League Greece",
     "Spor Toto Süper Lig","Süper Lig","3F Superliga","Eliteserien","Superligaen","PKO Ekstraklasa","Allsvenskan","Raiffeisen Super League",
     "Fortuna liga","Fortuna Liga","OTP Bank Liga","SuperSport HNL","Mozzart Bet SuperLiga","Cyta Championship",
@@ -978,165 +1403,28 @@ const LMAP = Object.entries(GROUP_PATTERNS).map(([g,list])=>({ g, re: makeUnion(
 
 function leagueGroupOf(txt){
   const s=String(txt||"");
+  const isLaLigaSecondTier = /\bla\s*liga\s*(2|hypermotion)\b|\blaliga\s*(2|hypermotion)\b|laliga smartbank|liga smartbank|segunda\s+divisi[oó]n/i.test(s);
+  const isBundesligaSecondTier = /\b2\.?\s*bundesliga\b|\bbundesliga\s*2\b/i.test(s);
   if (DOWNGRADE_TO_DEVELOP.test(s)) return "develop";       // explicit small top tiers down
   if (/saudi|roshn/i.test(s)) return "develop";              // explicit override: Saudi
+  if (isLaLigaSecondTier) return "strong";
+  if (isBundesligaSecondTier) return "strong";
+  if ((/\bla\s*liga\b|\blaliga\b|primera\s+divisi[oó]n|spanish first division/i.test(s)) && !isLaLigaSecondTier) return "elite";
+  if (/ligue\s*1(\b|\s|$)/i.test(s)) return "elite";
+  if (/ligue\s*2(\b|\s|$)/i.test(s)) return "strong";
   for(const {re,g} of LMAP){ if(re.test(s)) return g; }
   // Heuristics
   if(/expansi[oó]n mx|usl|canadian premier|j2|k league 2|china|thai|v\.?league|malaysia|uzbek|lebanon|tanzania|zambia/i.test(s))
     return "growth";
-  if(/premier|first div|1st division|pro liga|liga 1|liga i|championship/i.test(s)) return "solid";
-  if(/second|2nd|liga 2|division 2|liga ii|league two/i.test(s)) return "develop";
+  if(/premier|first div|1st division|pro liga|liga 1|liga i|championship|ligue 1/i.test(s)) return "solid";
+  if(/second|2nd|liga 2|division 2|liga ii|league two|ligue 2/i.test(s)) return "develop";
   return "solid";
 }
 
-/* ============== Value & Wage config (scaled up wages + floors) =============== */
-/* ============== Enhanced Value & Wage config with advanced modeling =============== */
-const DEFAULT_VALUE_CONFIG = {
-  // Enhanced league weighting with more granular scaling
-  leagueWeights: { elite:1.45, strong:1.00, solid:0.82, growth:0.72, develop:0.62 },
-  baseScales:    { elite:95.0, strong:12.0, solid:7.5,  growth:5.0,  develop:3.5 },
-
-  // More refined score shaping with position-specific curves
-  scorePower: { GK: 1.08, DF: 1.06, MF: 1.04, FW: 1.02 },
-  scoreFloor: 0.15, // Minimum score multiplier to prevent zero values
-
-  // Enhanced minutes reliability with position-specific requirements
-  minMinutesRef: { GK: 2500, DF: 2200, MF: 2000, FW: 1800 },
-  minMinutesFloor: 0.40,
-  minutesBoostCurve: 1.2, // How much extra minutes beyond ref boost value
-
-  // Sophisticated age curves by position with peak years
-  ageCurve: {
-    GK: { 16:0.75, 20:0.85, 24:0.95, 28:1.00, 32:1.02, 35:0.98, 38:0.90, 42:0.75 },
-    DF: { 16:0.80, 19:0.90, 22:0.98, 26:1.00, 29:0.98, 32:0.94, 35:0.87, 38:0.78 },
-    MF: { 16:0.82, 18:0.92, 21:0.98, 25:1.00, 28:0.98, 31:0.93, 34:0.85, 37:0.75 },
-    FW: { 16:0.78, 18:0.88, 21:0.96, 24:1.00, 27:0.98, 30:0.92, 33:0.83, 36:0.70 }
-  },
-
-  // Enhanced performance metrics weighting
-  bigMetricBoostTopPct: 90,
-  bigMetricBoostPerHit: 0.035,
-  excellenceThreshold: 95, // Extra boost for truly elite performers
-  excellenceBonus: 0.08,
-
-  // Role compatibility scoring (how well player fits their best role)
-  roleCompatibilityWeight: 0.25,
-  roleVersatilityBonus: 0.15, // Bonus for players who can play multiple roles well
-
-  // Contract expiry enhanced modeling
-  contractPremium: { 
-    "6+ years": 1.15, "4-5 years": 1.08, "3-4 years": 1.02, 
-    "2-3 years": 0.95, "1-2 years": 0.82, "< 1 year": 0.65, "Free": 0.45 
-  },
-
-  // League performance context (how player performs vs league average)
-  leaguePerformanceWeight: 0.20,
-  crossLeagueComparison: true,
-
-  // Positional scarcity multipliers (rare positions worth more)
-  positionScarcity: { 
-    GK: 1.05, "D (C)": 1.00, "D (L)": 1.08, "D (R)": 1.08, 
-    DM: 1.12, "M (C)": 1.00, "M (L)": 1.06, "M (R)": 1.06,
-    "AM (C)": 1.15, "AM (L)": 1.10, "AM (R)": 1.10, ST: 1.08
-  },
-
-  // Enhanced buy price modeling with market dynamics
-  buyDiscount: 0.87,
-  sellerMotivation: { // Additional factors affecting transfer price
-    contractExpiring: 0.75, // Club desperate to sell
-    youngProspect: 1.25,    // Premium for potential
-    starPlayer: 1.35,       // Premium for established stars
-    rivalClub: 1.15         // Premium when buying from rivals
-  },
-
-  // Sophisticated wage modeling
-  wagePerM: 2800, // £/week per £1m true value
-  wageLeagueFactor: { elite:1.40, strong:1.15, solid:1.00, growth:0.88, develop:0.82 },
-  
-  // Enhanced age-based wage curves (experience premium)
-  wageAgeBoost: {
-    GK: { 17:0.85, 21:0.92, 25:0.98, 29:1.00, 33:1.05, 37:1.02, 40:0.95 },
-    DF: { 17:0.88, 20:0.94, 24:0.99, 28:1.00, 31:1.03, 34:0.98, 37:0.90 },
-    MF: { 17:0.87, 19:0.93, 23:0.98, 27:1.00, 30:1.02, 33:0.96, 36:0.88 },
-    FW: { 17:0.85, 19:0.91, 23:0.97, 26:1.00, 29:0.98, 32:0.92, 35:0.82 }
-  },
-
-  // Performance-based wage premiums
-  wagePerformanceBonus: {
-    elite: 1.25,      // Top 5% performers
-    excellent: 1.15,  // Top 10% performers  
-    good: 1.05,       // Top 25% performers
-    average: 1.00     // Everyone else
-  },
-
-  // Enhanced wage floors with league context
-  wageGroupFloor: { elite: 1200, strong: 700, solid: 400, growth: 200, develop: 120 },
-  wageMinAbsolute: 100,
-  wageMaxMult: 1.50,
-
-  // Market dynamics and external factors
-  inflationRate: 1.03, // Annual transfer market inflation
-  economicFactors: {
-    elite: 1.10,    // Rich leagues can afford more
-    strong: 1.05,
-    solid: 1.00,
-    growth: 0.95,
-    develop: 0.90
-  },
-
-  // Reputation and marketing value
-  reputationBonus: {
-    worldClass: 1.30,     // 90+ overall rating equivalent
-    international: 1.20,  // 80-89 overall rating
-    national: 1.10,       // 70-79 overall rating
-    regional: 1.00        // Below 70 overall rating
-  }
-};
-
-
-/* ============== Enhanced Value & Wage model with advanced analytics ========================================== */
-
-// Enhanced age interpolation with position-specific curves
-function interpAge(age, curve) {
-  if (!Number.isFinite(age)) return 1;
-  const pts = Object.entries(curve).map(([k,v])=>[+k, v]).sort((a,b)=>a[0]-b[0]);
-  if (!pts.length) return 1;
-  if (age <= pts[0][0]) return pts[0][1];
-  if (age >= pts[pts.length-1][0]) return pts[pts.length-1][1];
-  for (let i=1;i<pts.length;i++){
-    const [x1,y1] = pts[i-1], [x2,y2] = pts[i];
-    if (age >= x1 && age <= x2){
-      const t = (age - x1) / (x2 - x1);
-      return y1 + t*(y2 - y1);
-    }
-  }
-  return 1;
-}
-
-// Enhanced minutes trust with position-specific requirements and bonus curve
-function minutesTrust(mins, posFamily, cfg) {
-  if (!Number.isFinite(mins)) return cfg.minMinutesFloor;
-  if (mins <= 0) return cfg.minMinutesFloor;
-  
-  const ref = typeof cfg.minMinutesRef === 'object' ? 
-    (cfg.minMinutesRef[posFamily] || 2000) : cfg.minMinutesRef;
-  
-  if (mins <= ref) {
-    // Standard curve up to reference
-    const t = Math.sqrt(mins / ref);
-    return Math.max(cfg.minMinutesFloor, Math.min(1, t));
-  } else {
-    // Bonus for extra minutes beyond reference
-    const excess = mins - ref;
-    const bonusRef = ref * 0.5; // 50% more minutes for max bonus
-    const bonusCurve = Math.min(1, excess / bonusRef);
-    const bonus = bonusCurve * (cfg.minutesBoostCurve - 1);
-    return Math.min(cfg.minutesBoostCurve, 1 + bonus);
-  }
-}
+/* ============== Role analysis helpers =============== */
 
 // Enhanced role versatility calculation
-function calculateRoleVersatility(row, pctIndex, posFamily) {
+function calculateRoleVersatility(row, pctIndex, posFamily, rolePctByRole = null) {
   const tokens = expandFMPositions(getCell(row, "Pos"));
   const applicableRoles = Object.keys(ROLE_BOOK).filter(role => {
     const baseline = ROLE_BASELINES[role] || [];
@@ -1147,7 +1435,7 @@ function calculateRoleVersatility(row, pctIndex, posFamily) {
   
   const roleScores = applicableRoles.map(role => ({
     role,
-    score: roleScoreFor(row, role, pctIndex)
+    score: roleScoreFor(row, role, pctIndex, rolePctByRole)
   })).sort((a, b) => b.score - a.score);
   
   // Versatility bonus based on how many roles they can play well (70%+)
@@ -1175,7 +1463,7 @@ function getPositionalFamily(tokens) {
 }
 
 // Enhanced league performance context
-function calculateLeagueContext(row, pctIndex, allRows, cfg) {
+function calculateLeagueContext(row, pctIndex, allRows, rolePctByRole = null) {
   const playerLeague = String(getCell(row, "League") || "");
   const playerGroup = leagueGroupOf(playerLeague);
   
@@ -1188,9 +1476,9 @@ function calculateLeagueContext(row, pctIndex, allRows, cfg) {
   if (leaguePeers.length < 10) return 1.0; // Not enough data for comparison
   
   // Calculate player's rank within their league group
-  const { role: playerRole, score: playerScore } = bestNearRole(row, pctIndex);
+  const { role: playerRole, score: playerScore } = bestNearRole(row, pctIndex, rolePctByRole);
   const peerScores = leaguePeers.map(peer => {
-    const { score } = bestNearRole(peer, pctIndex);
+    const { score } = bestNearRole(peer, pctIndex, rolePctByRole);
     return score;
   }).filter(s => Number.isFinite(s)).sort((a, b) => b - a);
   
@@ -1208,188 +1496,6 @@ function calculateLeagueContext(row, pctIndex, allRows, cfg) {
   return 0.95;
 }
 
-// Main enhanced value calculation
-function trueValueOf(row, pctIndex, cfg = DEFAULT_VALUE_CONFIG, gameMonth = 7, gameYear = 2024, allRows = []) {
-  const age = numCell(row, "Age");
-  const mins = numCell(row, "Minutes");
-  const league = String(getCell(row, "League") || "");
-  const group = leagueGroupOf(league);
-  const pos = getCell(row, "Pos") || "";
-  const tokens = expandFMPositions(pos);
-  const posFamily = getPositionalFamily(tokens);
-
-  // Enhanced config handling with fallbacks
-  const lw = (cfg.leagueWeights && cfg.leagueWeights[group]) ?? 0.70;
-  const scaleM = (cfg.baseScales && cfg.baseScales[group]) ?? 4.0;
-
-  // Role analysis with enhanced scoring
-  const { role, score } = bestNearRole(row, pctIndex);
-  const performanceTier = getPerformanceTier(score);
-  
-  // Position-specific score power adjustment
-  const scorePowerVal = typeof cfg.scorePower === 'object' ? 
-    (cfg.scorePower[posFamily] || 1.05) : cfg.scorePower;
-  const scoreAdj = Math.max(cfg.scoreFloor || 0.15, 
-    Math.pow((score || 0) / 100, scorePowerVal));
-
-  // Enhanced versatility analysis
-  const versatilityData = calculateRoleVersatility(row, pctIndex, posFamily);
-  const versatilityBonus = cfg.roleVersatilityBonus ? 
-    1 + (versatilityData.versatility - 1) * cfg.roleVersatilityBonus : 1;
-
-  // Enhanced big metrics analysis with position-specific focus
-  const famStats = BIG_METRICS[posFamily] || [];
-  let standardHits = 0;
-  let eliteHits = 0;
-  
-  for (const st of famStats) {
-    const v = numCell(row, st);
-    const pct = percentileFor(pctIndex, st, v);
-    if (pct >= (cfg.bigMetricBoostTopPct ?? 90)) standardHits++;
-    if (pct >= (cfg.excellenceThreshold ?? 95)) eliteHits++;
-  }
-  
-  const bigBoost = 1 + standardHits * (cfg.bigMetricBoostPerHit ?? 0.035);
-  const excellenceBonus = 1 + eliteHits * (cfg.excellenceBonus ?? 0.08);
-
-  // Enhanced minutes trust with position-specific requirements
-  const mt = minutesTrust(mins, posFamily, cfg);
-
-  // Enhanced age modeling with position-specific curves
-  const ageCurveData = typeof cfg.ageCurve === 'object' && cfg.ageCurve[posFamily] ? 
-    cfg.ageCurve[posFamily] : (cfg.ageCurve || { 17:0.9, 23:1, 29:0.96, 34:0.86 });
-  const am = interpAge(age, ageCurveData);
-
-  // Enhanced contract expiry impact
-  const contractExpiry = getCell(row, "Expires") || "";
-  const contractMultiplier = contractExpiryMultiplier(contractExpiry, gameMonth, gameYear);
-
-  // Positional scarcity bonus
-  const mainPos = tokens[0] || pos;
-  const scarcityBonus = (cfg.positionScarcity && cfg.positionScarcity[mainPos]) ?? 1.0;
-
-  // League performance context (if we have comparison data)
-  const leagueContextBonus = allRows.length > 100 ? 
-    calculateLeagueContext(row, pctIndex, allRows, cfg) : 1.0;
-
-  // Economic factors and market dynamics
-  const economicFactor = (cfg.economicFactors && cfg.economicFactors[group]) ?? 1.0;
-  const inflationFactor = cfg.inflationRate ?? 1.0;
-
-  // Reputation/marketing value estimation (based on overall performance)
-  let reputationLevel = 'regional';
-  if (score >= 90) reputationLevel = 'worldClass';
-  else if (score >= 80) reputationLevel = 'international';
-  else if (score >= 70) reputationLevel = 'national';
-  
-  const reputationBonus = (cfg.reputationBonus && cfg.reputationBonus[reputationLevel]) ?? 1.0;
-
-  // Combine all factors
-  const baseM = scaleM * scoreAdj * lw * mt * am * bigBoost * excellenceBonus * 
-                contractMultiplier * versatilityBonus * scarcityBonus * 
-                leagueContextBonus * economicFactor * inflationFactor * reputationBonus;
-
-  return { 
-    valueM: baseM, 
-    bestRole: role, 
-    bestScore: score,
-    group,
-    contractMultiplier,
-    posFamily,
-    performanceTier,
-    versatilityData,
-    leagueContextBonus,
-    components: {
-      base: scaleM,
-      score: scoreAdj,
-      league: lw,
-      minutes: mt,
-      age: am,
-      bigMetrics: bigBoost,
-      excellence: excellenceBonus,
-      contract: contractMultiplier,
-      versatility: versatilityBonus,
-      scarcity: scarcityBonus,
-      leagueContext: leagueContextBonus,
-      economic: economicFactor,
-      reputation: reputationBonus
-    }
-  };
-}
-
-// Enhanced buy price with market dynamics
-function buyAtOf(row, pctIndex, cfg = DEFAULT_VALUE_CONFIG, gameMonth = 7, gameYear = 2024, allRows = []) {
-  const { valueM, bestScore, posFamily, contractMultiplier } = trueValueOf(row, pctIndex, cfg, gameMonth, gameYear, allRows);
-  const age = numCell(row, "Age");
-  
-  let buyMultiplier = cfg.buyDiscount ?? 0.87;
-  
-  // Additional market dynamics
-  if (contractMultiplier < 0.8) {
-    // Contract expiring - seller motivated
-    buyMultiplier *= (cfg.sellerMotivation?.contractExpiring ?? 0.85);
-  }
-  
-  if (age <= 21 && bestScore >= 70) {
-    // Young prospect premium
-    buyMultiplier *= (cfg.sellerMotivation?.youngProspect ?? 1.15);
-  }
-  
-  if (bestScore >= 90) {
-    // Star player premium
-    buyMultiplier *= (cfg.sellerMotivation?.starPlayer ?? 1.25);
-  }
-  
-  return valueM * buyMultiplier;
-}
-
-// Enhanced weekly wage calculation
-function weeklyWageOf(row, pctIndex, cfg = DEFAULT_VALUE_CONFIG, gameMonth = 7, gameYear = 2024, allRows = []) {
-  const age = numCell(row, "Age");
-  const { valueM, group, posFamily, performanceTier, bestScore } = trueValueOf(row, pctIndex, cfg, gameMonth, gameYear, allRows);
-  
-  // League factor
-  const lfac = (cfg.wageLeagueFactor && cfg.wageLeagueFactor[group]) ?? 1.0;
-  
-  // Enhanced age-based wage curves by position
-  const wageAgeData = typeof cfg.wageAgeBoost === 'object' && cfg.wageAgeBoost[posFamily] ? 
-    cfg.wageAgeBoost[posFamily] : (cfg.wageAgeBoost || { 18:0.90, 24:1.00, 28:1.04, 31:1.08, 34:1.04 });
-  
-  const ageBoost = (() => {
-    if (typeof wageAgeData === 'object') {
-      return interpAge(age, wageAgeData);
-    }
-    return 1; // Fallback
-  })();
-  
-  // Performance-based wage premium
-  const performanceBonus = (cfg.wagePerformanceBonus && cfg.wagePerformanceBonus[performanceTier]) ?? 1.0;
-  
-  // Base wage calculation
-  const raw = (cfg.wagePerM ?? 2800) * valueM * lfac * ageBoost * performanceBonus;
-  
-  // Enhanced wage floors
-  const floor = Math.max(
-    cfg.wageMinAbsolute || 100, 
-    (cfg.wageGroupFloor && cfg.wageGroupFloor[group]) || 120
-  );
-  
-  return Math.max(floor, raw);
-}
-
-// Enhanced maximum wage calculation
-function weeklyWageMaxOf(row, pctIndex, cfg = DEFAULT_VALUE_CONFIG, gameMonth = 7, gameYear = 2024, allRows = []) {
-  const baseWage = weeklyWageOf(row, pctIndex, cfg, gameMonth, gameYear, allRows);
-  const { bestScore } = trueValueOf(row, pctIndex, cfg, gameMonth, gameYear, allRows);
-  
-  // Higher multiplier for elite performers
-  let maxMult = cfg.wageMaxMult || 1.50;
-  if (bestScore >= 95) maxMult *= 1.15; // Extra room for elite negotiations
-  else if (bestScore >= 90) maxMult *= 1.10;
-  
-  return baseWage * maxMult;
-}
-
 /* ===================== Tooltip util ===================== */
 function attachTooltip(hostEl) {
   const tip = document.createElement("div");
@@ -1404,9 +1510,9 @@ function attachTooltip(hostEl) {
 
   function place(clientX, clientY) {
     const hostRect = hostEl.getBoundingClientRect();
-    const pad = 12; const lw = tip.offsetWidth || 260; const lh = tip.offsetHeight || 100;
-    const x = Math.max(pad, Math.min(clientX - hostRect.left + 14, hostRect.width - lw - pad));
-    const y = Math.max(pad, Math.min(clientY - hostRect.top - lh - 10, hostRect.height - lh - pad));
+    const pad = 4; const lw = tip.offsetWidth || 260; const lh = tip.offsetHeight || 100;
+    const x = Math.max(pad, Math.min(clientX - hostRect.left + 2, hostRect.width - lw - pad));
+    const y = Math.max(pad, Math.min(clientY - hostRect.top + 2, hostRect.height - lh - pad));
     tip.style.left = x + "px"; tip.style.top = y + "px";
   }
   function show(evt, html) {
@@ -1445,6 +1551,7 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
   const [chartData, setChartData] = useState(null);
   const [hoveredSegment, setHoveredSegment] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const wrapRef = useRef(null);
 
   useEffect(() => {
     if (!playerName || !playerData || !roleStats || roleStats.length === 0) return;
@@ -1536,7 +1643,7 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
     });
 
     return (
-      <div style={{ textAlign: 'center', padding: '16px' }}>
+      <div ref={wrapRef} style={{ textAlign: 'center', padding: '16px', position: 'relative' }}>
         <div style={{ marginBottom: '12px' }}>
           <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{chartData.playerName}</div>
           <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
@@ -1566,7 +1673,7 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
                 <path
                   d={segment.path}
                   fill={segment.color}
-                  stroke="var(--cardBg)"
+                  stroke="var(--cardBorder)"
                   strokeWidth="2"
                   opacity={hoveredSegment === index ? "1.0" : "0.8"}
                   style={{ 
@@ -1576,17 +1683,22 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
                   }}
                   onMouseEnter={(e) => {
                     setHoveredSegment(index);
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setTooltipPosition({
-                      x: e.clientX,
-                      y: e.clientY
-                    });
+                    const rect = wrapRef.current?.getBoundingClientRect();
+                    if (rect) {
+                      setTooltipPosition({
+                        x: e.clientX - rect.left,
+                        y: e.clientY - rect.top
+                      });
+                    }
                   }}
                   onMouseMove={(e) => {
-                    setTooltipPosition({
-                      x: e.clientX,
-                      y: e.clientY
-                    });
+                    const rect = wrapRef.current?.getBoundingClientRect();
+                    if (rect) {
+                      setTooltipPosition({
+                        x: e.clientX - rect.left,
+                        y: e.clientY - rect.top
+                      });
+                    }
                   }}
                   onMouseLeave={() => {
                     setHoveredSegment(null);
@@ -1676,7 +1788,7 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
               cx={center}
               cy={centerY}
               r="3"
-              fill="var(--text)"
+              fill="var(--ink)"
             />
           </svg>
         </div>
@@ -1685,13 +1797,12 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
         {hoveredSegment !== null && (
           <div
             style={{
-              position: 'fixed',
-              left: tooltipPosition.x + 10,
-              top: tooltipPosition.y - 10,
-              background: 'var(--cardBg)',
-              backgroundColor: 'rgba(var(--cardBg-rgb, 255, 255, 255), 0.45)',
+              position: 'absolute',
+              left: tooltipPosition.x + 8,
+              top: tooltipPosition.y + 8,
+              background: 'color-mix(in oklab, var(--card) 85%, transparent)',
               backdropFilter: 'blur(8px)',
-              border: '1px solid var(--cardBorder)',
+              border: '1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%)',
               borderRadius: '6px',
               padding: '8px 12px',
               fontSize: '11px',
@@ -1711,10 +1822,10 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
               <strong>Percentile:</strong> {chartData.stats[hoveredSegment].value.toFixed(1)}%
             </div>
             <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '4px' }}>
-              vs {compScope} • {chartData.stats[hoveredSegment].value >= 90 ? '🔥 Elite' : 
-                chartData.stats[hoveredSegment].value >= 75 ? '✨ Excellent' :
-                chartData.stats[hoveredSegment].value >= 60 ? '👍 Good' :
-                chartData.stats[hoveredSegment].value >= 40 ? '📊 Average' : '📉 Below Average'}
+              vs {compScope} • {chartData.stats[hoveredSegment].value >= 90 ? 'Elite' : 
+                chartData.stats[hoveredSegment].value >= 75 ? 'Excellent' :
+                chartData.stats[hoveredSegment].value >= 60 ? 'Good' :
+                chartData.stats[hoveredSegment].value >= 40 ? 'Average' : 'Below Average'}
             </div>
           </div>
         )}
@@ -1920,7 +2031,7 @@ function HBar({ items, titleFmt=(v)=>`${v}%`, valueMax=100 }) {
     const data = Array.isArray(items) ? items : [];
     const h = Math.max(280, 54 + rowH * data.length);
     // Measure longest label to size left margin dynamically
-    const measureText = (text, font = "14px Inter, sans-serif") => {
+    const measureText = (text, font = "14px \"Space Grotesk\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Helvetica, Arial") => {
       try {
         const canvas = measureText.__c || (measureText.__c = document.createElement("canvas"));
         const ctx = canvas.getContext("2d");
@@ -2038,65 +2149,9 @@ function useStickyState(key, initial) {
   return [v, setV];
 }
 
-
-/* ---- HOTFIX: normalize value config from older localStorage blobs ---- */
-function normalizeValueCfg(cfg){
-  const FALLBACK = {
-    leagueWeights: { elite:1.00, strong:0.83, solid:0.70, growth:0.60, develop:0.52 },
-    baseScales:    { elite:6.2,  strong:4.8,  solid:3.5,  growth:2.6,  develop:2.0 },
-    // wage knobs (scaled up a bit)
-    wagePerM: 1600,                   // £/week per £1m True Value
-    wageMaxMult: 1.45,                // cap multiplier
-    wageFloor: 250,                   // never below this
-    wageLeagueMults: { elite:1.00, strong:0.85, solid:0.70, growth:0.60, develop:0.50 },
-  };
-  const d = DEFAULT_VALUE_CONFIG || {};
-  const out = { ...FALLBACK, ...d, ...(cfg||{}) };
-
-  // Deep merge tiers so all five exist even if missing in saved cfg
-  out.leagueWeights = {
-    ...FALLBACK.leagueWeights,
-    ...(d.leagueWeights||{}),
-    ...((cfg && cfg.leagueWeights) || {})
-  };
-  out.baseScales = {
-    ...FALLBACK.baseScales,
-    ...(d.baseScales||{}),
-    ...((cfg && cfg.baseScales) || {})
-  };
-  out.wageLeagueMults = {
-    ...FALLBACK.wageLeagueMults,
-    ...(d.wageLeagueMults||{}),
-    ...((cfg && cfg.wageLeagueMults) || {})
-  };
-
-  // Ensure scalar fields exist
-  out.wagePerM    = out.wagePerM    ?? FALLBACK.wagePerM;
-  out.wageMaxMult = out.wageMaxMult ?? FALLBACK.wageMaxMult;
-  out.wageFloor   = out.wageFloor   ?? FALLBACK.wageFloor;
-
-  return out;
-}
-
-/* ===================== APP — PART 2/2 (FULL REPLACEMENT) ===================== */
-
-
-/* NOTE:
-   This file assumes PART 1/2 changes (CSS, Radar/HBar/Scatter, DEFAULT_VALUE_CONFIG) have been applied.
-*/
-
-/* ===================== Error Boundary ===================== */
-
-/* Reuse helpers from PART 1 (assumed present in file): POS14, ROLE_BOOK, ROLE_STATS, ROLE_WEIGHTS,
-   ROLE_BASELINES, ALL_ROLE_STATS, LABELS, numerify, parseMoneyRange, parseOneMoney, money, tf, clamp100,
-   normalizeValueCfg, buildPercentileIndex, percentileFor, roleScoreFor, bestNearRole, expandFMPositions,
-   famFromTokens, attachTooltip, useResizeObserver, Radar, HBar, Scatter, etc.
-   (These are defined in PART 1/2 as you applied.)
-*/
-
 /* ===================== APP ===================== */
 /* ===================== Club Context Analysis ===================== */
-function analyzeClubContext(managedClub, rows, pctIndex) {
+function analyzeClubContext(managedClub, rows, pctIndex, rolePctByRole = null) {
   if (!managedClub) return null;
   
   // Get all players from the managed club
@@ -2121,7 +2176,7 @@ function analyzeClubContext(managedClub, rows, pctIndex) {
   
   // Analyze each player and categorize by position AND role
   clubPlayers.forEach(player => {
-    const { role, score } = bestNearRole(player, pctIndex);
+    const { role, score } = bestNearRole(player, pctIndex, rolePctByRole);
     const tokens = expandFMPositions(getCell(player, "Pos"));
     const posFamily = famFromTokens(tokens);
     
@@ -2138,7 +2193,7 @@ function analyzeClubContext(managedClub, rows, pctIndex) {
     Object.keys(ROLE_BOOK).forEach(roleName => {
       const baseline = ROLE_BASELINES[roleName] || [];
       if (sharesAny(tokens, baseline)) {
-        const roleScore = roleScoreFor(player, roleName, pctIndex) || 0;
+        const roleScore = roleScoreFor(player, roleName, pctIndex, rolePctByRole) || 0;
         playerData.allRoleScores[roleName] = roleScore;
         
         // Consider "competent" coverage if score is within reasonable threshold of best role
@@ -2220,7 +2275,7 @@ function analyzeClubContext(managedClub, rows, pctIndex) {
   
   // Overall squad analysis
   const allScores = clubPlayers.map(player => {
-    const { score } = bestNearRole(player, pctIndex);
+    const { score } = bestNearRole(player, pctIndex, rolePctByRole);
     return score || 0;
   }).filter(Number.isFinite);
   
@@ -2272,10 +2327,10 @@ function analyzeClubContext(managedClub, rows, pctIndex) {
 function getContextualRecommendation(playerData, clubContext, totalValue, performanceTier, contractMultiplier, versatilityData) {
   if (!clubContext) {
     // Default recommendations without club context
-    if (performanceTier === 'elite') return { recommendation: '🔥 Exceptional talent - premium investment', priority: 'HIGH' };
-    if (performanceTier === 'excellent') return { recommendation: '⭐ High-quality player - solid investment', priority: 'MEDIUM' };
-    if (performanceTier === 'good') return { recommendation: '✅ Good squad player - fair value', priority: 'LOW' };
-    return { recommendation: '📊 Squad depth option - budget-friendly', priority: 'LOW' };
+    if (performanceTier === 'elite') return { recommendation: 'Exceptional talent - premium investment', priority: 'HIGH' };
+    if (performanceTier === 'excellent') return { recommendation: 'High-quality player - solid investment', priority: 'MEDIUM' };
+    if (performanceTier === 'good') return { recommendation: 'Good squad player - fair value', priority: 'LOW' };
+    return { recommendation: 'Squad depth option - budget-friendly', priority: 'LOW' };
   }
   
   const { clubTier, positionAnalysis, roleAnalysis, roleCoverage, leagueGroup, expectations, criticalNeeds, weakPositions, upgradeNeeds } = clubContext;
@@ -2363,14 +2418,14 @@ function getContextualRecommendation(playerData, clubContext, totalValue, perfor
   if (isCriticalNeed || hasCriticalNeed) {
     if (adjustedPlayerScore >= expectations.min) {
       if (hasCriticalNeed) {
-        recommendation = `🚨 CRITICAL ROLE NEED - No ${playerRole} specialist or capable coverage! Essential signing`;
+        recommendation = `CRITICAL ROLE NEED - No ${playerRole} specialist or capable coverage! Essential signing`;
       } else {
-        recommendation = `🚨 CRITICAL NEED - No ${playerPos} coverage! Essential signing`;
+        recommendation = `CRITICAL NEED - No ${playerPos} coverage! Essential signing`;
       }
       priority = 'CRITICAL';
       clubFit = 'ESSENTIAL';
     } else {
-      recommendation = `⚠️ Position need but player may struggle at ${leagueGroup} level`;
+      recommendation = `Position need but player may struggle at ${leagueGroup} level`;
       priority = 'MEDIUM';
       clubFit = 'RISKY';
     }
@@ -2378,41 +2433,41 @@ function getContextualRecommendation(playerData, clubContext, totalValue, perfor
   // Consider flexible coverage in recommendations
   else if (hasNoRolePlayers && hasFlexibleCoverage && !isSignificantRoleUpgrade) {
     const coveragePlayers = roleCoverageData.map(p => p.name).join(", ");
-    recommendation = `✅ Role covered by flexible players (${coveragePlayers} at ${bestFlexibleScore.toFixed(1)}) - not critical need`;
+    recommendation = `Role covered by flexible players (${coveragePlayers} at ${bestFlexibleScore.toFixed(1)}) - not critical need`;
     priority = isRoleUpgrade ? 'MEDIUM' : 'LOW';
     clubFit = isRoleUpgrade ? 'UPGRADE' : 'DEPTH';
   }
   // Major signing when no specialists exist but player would be excellent
   else if (hasNoRolePlayers && isSignificantRoleUpgrade) {
     const flexCoverage = hasFlexibleCoverage ? ` (flexible coverage: ${bestFlexibleScore.toFixed(1)})` : '';
-    recommendation = `🌟 Major ${playerRole} signing - establishes specialist quality${flexCoverage}`;
+    recommendation = `Major ${playerRole} signing - establishes specialist quality${flexCoverage}`;
     priority = 'HIGH';
     clubFit = 'ESSENTIAL';
     
     if (playerLeagueTier > clubLeagueTier) {
-      recommendation += `\n✨ Higher league experience - proven at ${playerLeague} level`;
+      recommendation += `\nHigher league experience - proven at ${playerLeague} level`;
     }
   }
   // Role-specific significant upgrades (when specialists exist)
   else if ((hasWeakRolePlayers || needsRoleUpgrade) && isSignificantRoleUpgrade && !hasNoRolePlayers) {
-    recommendation = `🔥 Major ${playerRole} upgrade - transforms role quality (current best: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+    recommendation = `Major ${playerRole} upgrade - transforms role quality (current best: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
     priority = 'HIGH';
     clubFit = 'UPGRADE';
     
     if (playerLeagueTier > clubLeagueTier) {
-      recommendation += `\n✨ Higher league experience - proven at ${playerLeague} level`;
+      recommendation += `\nHigher league experience - proven at ${playerLeague} level`;
     }
   }
   // Role-specific regular upgrades
   else if (needsRoleUpgrade && isRoleUpgrade) {
     if (playerLeagueTier > clubLeagueTier) {
-      recommendation = `⭐ Step-up ${playerRole} - ${playerLeague} quality improves role (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+      recommendation = `Step-up ${playerRole} - ${playerLeague} quality improves role (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
       priority = 'HIGH';
     } else if (playerLeagueTier === clubLeagueTier) {
-      recommendation = `📈 Solid ${playerRole} upgrade - improves role quality (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+      recommendation = `Solid ${playerRole} upgrade - improves role quality (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
       priority = 'MEDIUM';
     } else {
-      recommendation = `⚠️ Lower league ${playerRole} - may need time to adapt to ${leagueGroup}`;
+      recommendation = `Lower league ${playerRole} - may need time to adapt to ${leagueGroup}`;
       priority = 'LOW';
     }
     clubFit = 'UPGRADE';
@@ -2420,19 +2475,19 @@ function getContextualRecommendation(playerData, clubContext, totalValue, perfor
   // Role comparison for already strong roles
   else if (currentRoleBestScore >= expectations.good) {
     if (isSignificantRoleUpgrade && playerLeagueTier >= clubLeagueTier) {
-      recommendation = `🌟 Elite ${playerRole} upgrade - but role already strong (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+      recommendation = `Elite ${playerRole} upgrade - but role already strong (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
       priority = isAffordable ? 'MEDIUM' : 'LOW';
       clubFit = 'LUXURY';
     } else if (currentRolePlayerCount >= 2) {
-      recommendation = `❌ ${playerRole} already covered - good depth in role (${currentRolePlayerCount} players)`;
+      recommendation = `${playerRole} already covered - good depth in role (${currentRolePlayerCount} players)`;
       priority = 'LOW';
       clubFit = 'SURPLUS';
     } else if (currentRolePlayerCount < 2 && isSimilarRoleLevel) {
-      recommendation = `✅ ${playerRole} depth - adds rotation option (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+      recommendation = `${playerRole} depth - adds rotation option (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
       priority = 'LOW';
       clubFit = 'DEPTH';
     } else {
-      recommendation = `❌ Below current ${playerRole} standard (current best: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+      recommendation = `Below current ${playerRole} standard (current best: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
       priority = 'LOW';
       clubFit = 'DOWNGRADE';
     }
@@ -2440,21 +2495,21 @@ function getContextualRecommendation(playerData, clubContext, totalValue, perfor
   // Standard analysis for other cases (using role comparison)
   else {
     if (isSignificantRoleUpgrade) {
-      recommendation = `🚀 Major ${playerRole} upgrade - significant improvement (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+      recommendation = `Major ${playerRole} upgrade - significant improvement (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
       priority = 'HIGH';
       clubFit = 'UPGRADE';
     } else if (isRoleUpgrade) {
-      recommendation = `📈 Good ${playerRole} improvement - steady enhancement (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+      recommendation = `Good ${playerRole} improvement - steady enhancement (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
       priority = 'MEDIUM';  
       clubFit = 'UPGRADE';
     } else if (isSimilarRoleLevel) {
       recommendation = currentRolePlayerCount >= 2 ? 
-        `✅ ${playerRole} depth - similar level to current best (${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})` :
-        `🔧 ${playerRole} cover - fills role gap (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+        `${playerRole} depth - similar level to current best (${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})` :
+        `${playerRole} cover - fills role gap (current: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
       priority = 'LOW';
       clubFit = 'SIMILAR';
     } else {
-      recommendation = `❌ Below ${playerRole} standard - current players stronger (best: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
+      recommendation = `Below ${playerRole} standard - current players stronger (best: ${currentRoleBestScore.toFixed(1)}${currentRoleBestPlayerName ? ` by ${currentRoleBestPlayerName}` : ''})`;
       priority = 'LOW';
       clubFit = 'DOWNGRADE';
     }
@@ -2462,26 +2517,26 @@ function getContextualRecommendation(playerData, clubContext, totalValue, perfor
   
   // Add league tier context
   if (playerLeagueTier > clubLeagueTier && priority !== 'LOW') {
-    recommendation += `\n🏆 Higher league pedigree (+${leagueTierBonus} adjusted rating)`;
+    recommendation += `\nHigher league pedigree (+${leagueTierBonus} adjusted rating)`;
   } else if (playerLeagueTier < clubLeagueTier) {
-    recommendation += `\n⚠️ Lower league background (${leagueTierBonus} rating adjustment)`;
+    recommendation += `\nLower league background (${leagueTierBonus} rating adjustment)`;
   }
   
   // Add contract considerations
   if (contractOpportunity && priority !== 'LOW') {
-    recommendation += '\n💰 Contract expiring - opportunity for discount';
+    recommendation += '\nContract expiring - opportunity for discount';
   }
   
   // Add versatility note for relevant signings
   if (versatilityData.versatility > 1.1 && priority !== 'LOW') {
-    recommendation += '\n🔄 Versatile player - covers multiple positions';
+    recommendation += '\nVersatile player - covers multiple positions';
   }
   
   // Add value context
   if (isExpensive && priority === 'HIGH') {
-    recommendation += '\n💸 Premium investment - stretch budget for quality';
+    recommendation += '\nPremium investment - stretch budget for quality';
   } else if (isAffordable && priority === 'MEDIUM') {
-    recommendation += '\n💚 Good value - affordable improvement';
+    recommendation += '\nGood value - affordable improvement';
   }
   
   return { 
@@ -2507,292 +2562,6 @@ function getContextualRecommendation(playerData, clubContext, totalValue, perfor
   };
 }
 
-/* ===================== Enhanced Value Breakdown Component ===================== */
-const ValueBreakdown = ({ playerName, getValueBreakdown, managedClub, rows, filteredRows, pctIndex }) => {
-  if (!playerName) return <div style={{color: "var(--muted)"}}>Select a player to see value analysis</div>;
-  
-  const breakdown = getValueBreakdown(playerName);
-  if (!breakdown) return <div style={{color: "var(--error)"}}>Unable to analyze value for this player</div>;
-
-  const {
-    totalValue, gameValue, bestRole, bestScore, league, leagueGroup, position, posFamily,
-    age, minutes, contractExpiry, contractMultiplier, performanceTier,
-    versatilityData, leagueContextBonus, components, recommendations
-  } = breakdown;
-
-  // Market valuation analysis
-  const getMarketValuation = (trueValue, gameValue) => {
-    if (!Number.isFinite(gameValue) || gameValue === 0) return { status: 'Unknown', color: 'var(--muted)', ratio: null };
-    
-    const ratio = trueValue / gameValue;
-    
-    if (ratio >= 1.3) return { status: 'Significantly Undervalued', color: 'var(--accent)', ratio };
-    if (ratio >= 1.15) return { status: 'Undervalued', color: '#7ED321', ratio };
-    if (ratio >= 0.85) return { status: 'Fairly Valued', color: 'var(--ink)', ratio };
-    if (ratio >= 0.7) return { status: 'Overvalued', color: '#F7931E', ratio };
-    return { status: 'Significantly Overvalued', color: 'var(--accent2)', ratio };
-  };
-
-  const marketValuation = getMarketValuation(totalValue, gameValue);
-
-  // Analyze club context for tailored recommendations
-  const clubContext = analyzeClubContext(managedClub, filteredRows, pctIndex);
-  const contextualRec = getContextualRecommendation(
-    breakdown, clubContext, totalValue, performanceTier, contractMultiplier, versatilityData
-  );
-
-  const formatMoney = (val) => {
-    if (!Number.isFinite(val)) return "—";
-    if (val >= 1e6) return `£${(val/1e6).toFixed(1)}M`;
-    if (val >= 1e3) return `£${(val/1e3).toFixed(0)}K`;
-    return `£${val.toFixed(0)}`;
-  };
-
-  const formatPercent = (val) => `${(val * 100).toFixed(0)}%`;
-  const formatMultiplier = (val) => `${val.toFixed(2)}x`;
-
-  const getTierColor = (tier) => {
-    switch(tier) {
-      case 'elite': return '#FF6B35';
-      case 'excellent': return '#F7931E'; 
-      case 'good': return '#4A90E2';
-      case 'average': return '#7ED321';
-      default: return 'var(--muted)';
-    }
-  };
-
-  const getTierLabel = (tier) => {
-    switch(tier) {
-      case 'elite': return '🌟 Elite (95%+)';
-      case 'excellent': return '⭐ Excellent (90%+)';
-      case 'good': return '✨ Good (75%+)';
-      case 'average': return '📊 Average';
-      default: return tier;
-    }
-  };
-
-  return (
-    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', fontSize: '12px'}}>
-      {/* Column 1: Player Overview */}
-      <div>
-        <h4 style={{margin: '0 0 12px 0', color: 'var(--accent)', fontSize: '14px'}}>📊 Player Overview</h4>
-        
-        <div style={{marginBottom: '8px'}}>
-          <strong>Performance Tier:</strong>
-          <div style={{color: getTierColor(performanceTier), fontWeight: 'bold', marginTop: '2px'}}>
-            {getTierLabel(performanceTier)}
-          </div>
-        </div>
-
-        <div style={{marginBottom: '8px'}}>
-          <strong>Best Role:</strong> {bestRole}
-          <div style={{color: 'var(--muted)', fontSize: '11px'}}>Score: {bestScore.toFixed(1)}/100</div>
-        </div>
-
-        <div style={{marginBottom: '8px'}}>
-          <strong>League Context:</strong> {leagueGroup}
-          <div style={{color: 'var(--muted)', fontSize: '11px'}}>
-            Performance vs peers: {formatMultiplier(leagueContextBonus)}
-          </div>
-        </div>
-
-        <div style={{marginBottom: '8px'}}>
-          <strong>Versatility:</strong>
-          <div style={{color: 'var(--muted)', fontSize: '11px'}}>
-            Can play {versatilityData.applicableRolesCount} roles well
-            {versatilityData.topRoles.length > 1 && (
-              <div>Top alternatives: {versatilityData.topRoles.slice(1, 3).map(r => r.role).join(", ")}</div>
-            )}
-          </div>
-        </div>
-
-        <div style={{marginBottom: '8px'}}>
-          <strong>Contract Status:</strong>
-          <div style={{color: contractMultiplier < 0.8 ? 'var(--accent2)' : 'var(--muted)', fontSize: '11px'}}>
-            Expires: {contractExpiry || "Unknown"}
-            <div>Value impact: {formatPercent(contractMultiplier)}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Column 2: Value Components */}
-      <div>
-        <h4 style={{margin: '0 0 12px 0', color: 'var(--accent)', fontSize: '14px'}}>⚙️ Value Components</h4>
-        
-        {Object.entries(components).map(([key, value]) => {
-          if (key === 'base') return null; // Skip base as it's just the starting scale
-          
-          const getComponentLabel = (k) => {
-            switch(k) {
-              case 'score': return 'Role Performance';
-              case 'league': return 'League Quality';
-              case 'minutes': return 'Playing Time';
-              case 'age': return 'Age Curve';
-              case 'bigMetrics': return 'Key Stats Bonus';
-              case 'excellence': return 'Elite Performance';
-              case 'contract': return 'Contract Length';
-              case 'versatility': return 'Versatility Bonus';
-              case 'scarcity': return 'Position Scarcity';
-              case 'leagueContext': return 'Peer Performance (League Group)';
-              case 'economic': return 'Economic Factor';
-              case 'reputation': return 'Reputation Value';
-              default: return k;
-            }
-          };
-
-          const isBonus = value > 1.05;
-          const isPenalty = value < 0.95;
-          
-          return (
-            <div key={key} style={{
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              marginBottom: '4px',
-              color: isBonus ? 'var(--accent)' : isPenalty ? 'var(--accent2)' : 'inherit'
-            }}>
-              <span>{getComponentLabel(key)}:</span>
-              <span style={{fontWeight: 'bold'}}>
-                {formatMultiplier(value)}
-                {isBonus && ' 📈'}
-                {isPenalty && ' 📉'}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Column 3: Recommendations */}
-      <div>
-        <h4 style={{margin: '0 0 12px 0', color: 'var(--accent)', fontSize: '14px'}}>💰 Recommendations</h4>
-        
-        <div style={{marginBottom: '12px'}}>
-          <div style={{fontWeight: 'bold', fontSize: '14px', color: 'var(--accent)'}}>
-            True Value: {formatMoney(totalValue)}
-          </div>
-          <div style={{color: 'var(--muted)', fontSize: '11px', marginTop: '2px'}}>
-            Market value estimate
-          </div>
-        </div>
-
-        {gameValue && (
-          <div style={{marginBottom: '12px'}}>
-            <div style={{fontSize: '12px'}}>
-              <strong>Game Value:</strong> {formatMoney(gameValue)}
-            </div>
-            <div style={{
-              color: marketValuation.color, 
-              fontWeight: 'bold', 
-              fontSize: '11px',
-              marginTop: '2px'
-            }}>
-              {marketValuation.status}
-              {marketValuation.ratio && (
-                <span style={{color: 'var(--muted)', fontWeight: 'normal'}}>
-                  {' '}({marketValuation.ratio.toFixed(2)}x)
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div style={{marginBottom: '8px'}}>
-          <strong>Fair Wage:</strong>
-          <div style={{color: 'var(--ink)', fontWeight: 'bold'}}>
-            {formatMoney(recommendations.fairWage)}/week
-          </div>
-        </div>
-
-        <div style={{marginBottom: '8px'}}>
-          <strong>Max Wage:</strong>
-          <div style={{color: 'var(--muted)', fontWeight: 'bold'}}>
-            {formatMoney(recommendations.maxWage)}/week
-          </div>
-          <div style={{color: 'var(--muted)', fontSize: '11px'}}>
-            Negotiation ceiling
-          </div>
-        </div>
-
-        <div style={{
-          marginTop: '12px', 
-          padding: '8px', 
-          backgroundColor: 'var(--cardBg)', 
-          border: '1px solid var(--cardBorder)',
-          borderRadius: '4px'
-        }}>
-          <div style={{fontSize: '11px', color: 'var(--muted)', marginBottom: '4px'}}>
-            {managedClub ? `Recommendation for ${managedClub}:` : 'Quick Assessment:'}
-          </div>
-          
-          {clubContext && (
-            <div style={{fontSize: '10px', color: 'var(--muted)', marginBottom: '6px'}}>
-              Your squad: {clubContext.leagueGroup} level • {clubContext.league}
-              <div>
-                {bestRole}: {clubContext.roleAnalysis[bestRole]?.count || 0} specialists • 
-                Best: {(clubContext.roleAnalysis[bestRole]?.bestScore || 0).toFixed(1)} 
-                {clubContext.roleAnalysis[bestRole]?.bestPlayerName && 
-                  ` (${clubContext.roleAnalysis[bestRole].bestPlayerName})`
-                } • 
-                Status: {
-                  !clubContext.roleAnalysis[bestRole] && (!clubContext.roleCoverage?.[bestRole] || clubContext.roleCoverage[bestRole].length === 0) ? '🚨 NO COVERAGE' :
-                  !clubContext.roleAnalysis[bestRole] && clubContext.roleCoverage?.[bestRole]?.length > 0 ? '🔄 FLEXIBLE ONLY' :
-                  (clubContext.roleAnalysis[bestRole]?.bestScore || 0) < clubContext.expectations.min ? '🚨 WEAK' :
-                  (clubContext.roleAnalysis[bestRole]?.bestScore || 0) < clubContext.expectations.good ? '⚠️ NEEDS UPGRADE' :
-                  '✅ STRONG'
-                }
-                {clubContext.roleCoverage?.[bestRole]?.length > 0 && (
-                  <div style={{fontSize: '9px', color: 'var(--muted)', marginTop: '2px'}}>
-                    Flexible coverage: {clubContext.roleCoverage[bestRole].map(p => 
-                      `${p.name} (${p.score.toFixed(0)}, best: ${p.bestRole})`
-                    ).join(', ')}
-                  </div>
-                )}
-              </div>
-              <div style={{fontSize: '9px', opacity: '0.8'}}>
-                Position ({posFamily}): {clubContext.positionAnalysis[posFamily]?.players?.length || 0} total • 
-                Best: {(clubContext.positionAnalysis[posFamily]?.bestScore || 0).toFixed(1)}
-              </div>
-              {contextualRec?.positionContext?.leagueTierBonus && (
-                <div>League adjustment: {contextualRec.positionContext.leagueTierBonus > 0 ? '+' : ''}{contextualRec.positionContext.leagueTierBonus} rating points</div>
-              )}
-            </div>
-          )}
-          
-          <div style={{fontSize: '11px', whiteSpace: 'pre-line'}}>
-            {contextualRec ? contextualRec.recommendation : (
-              performanceTier === 'elite' ? '🔥 Exceptional talent - premium investment' :
-              performanceTier === 'excellent' ? '⭐ High-quality player - solid investment' :
-              performanceTier === 'good' ? '✅ Good squad player - fair value' :
-              '📊 Squad depth option - budget-friendly'
-            )}
-          </div>
-          
-          {contextualRec && (
-            <div style={{
-              marginTop: '4px', 
-              fontSize: '10px', 
-              padding: '2px 6px',
-              borderRadius: '3px',
-              display: 'inline-block',
-              backgroundColor: 
-                contextualRec.priority === 'CRITICAL' ? 'rgba(220, 38, 38, 0.2)' :
-                contextualRec.priority === 'HIGH' ? 'rgba(255, 107, 53, 0.2)' :
-                contextualRec.priority === 'MEDIUM' ? 'rgba(74, 144, 226, 0.2)' :
-                'rgba(126, 211, 33, 0.2)',
-              color:
-                contextualRec.priority === 'CRITICAL' ? '#DC2626' :
-                contextualRec.priority === 'HIGH' ? '#FF6B35' :
-                contextualRec.priority === 'MEDIUM' ? '#4A90E2' :
-                '#7ED321'
-            }}>
-              {contextualRec.priority} PRIORITY • {contextualRec.clubFit} FIT
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export default function App(){
   /* ---------- UI Theme / Mode ---------- */
   const [themeName, setThemeName] = useStickyState("ui:theme","sleek");
@@ -2809,6 +2578,11 @@ export default function App(){
   const [posCohort, setPosCohort] = useStickyState("flt:posCohort", POS14);
   const [minMinutes, setMinMinutes] = useStickyState("flt:minMinutes", 600);
   const [maxAge, setMaxAge] = useStickyState("flt:maxAge", 33);
+  const [minHeight, setMinHeight] = useStickyState("flt:minHeight", "");
+  const [maxHeight, setMaxHeight] = useStickyState("flt:maxHeight", "");
+  const [statFilters, setStatFilters] = useStickyState("flt:statFilters", []);
+  const [statFilterLogic, setStatFilterLogic] = useStickyState("flt:statFilterLogic", "AND");
+  const [statFilterMode, setStatFilterMode] = useStickyState("flt:statFilterMode", "raw");
 
   /* ---------- Current Game Date ---------- */
   const [gameMonth, setGameMonth] = useStickyState("game:month", 7); // July start of season
@@ -2829,13 +2603,13 @@ export default function App(){
   const [transferMaxResults, setTransferMaxResults] = useStickyState("transfer:maxResults", 30);
   const [targetSpecificRole, setTargetSpecificRole] = useStickyState("transfer:targetRole", "");
 
-  /* ---------- Search (buffered + applied) ---------- */
+  /* ---------- Search (live) ---------- */
   const [searchQuery, setSearchQuery] = useStickyState("flt:q:query", "");
-  const [searchApplied, setSearchApplied] = useStickyState("flt:applied", false);
 
   /* ---------- Selections ---------- */
   const [player, setPlayer] = useStickyState("sel:player", "");
   const [role, setRole] = useStickyState("sel:role", Object.keys(ROLE_STATS)[0] || "");
+  const [roleSelectionMode, setRoleSelectionMode] = useStickyState("sel:roleSelectionMode", "Persist");
 
   /* ---------- Scatter & stat selects ---------- */
   const [roleX, setRoleX] = useStickyState("scatter:roleX", Object.keys(ROLE_STATS)[0] || "");
@@ -2878,15 +2652,23 @@ export default function App(){
   }, [rows, datasetColumns]);
 
   const metricBuilderOptions = useMemo(() => {
-    const source = dbNumericStats.length ? dbNumericStats : allStats;
-    return Array.from(new Set(source))
+    return Array.from(new Set(dbNumericStats))
       .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
-  }, [dbNumericStats, allStats]);
+  }, [dbNumericStats]);
 
   const scatterStatOptions = useMemo(() => {
     return Array.from(new Set([...metricBuilderOptions, ...customMetricNames]))
       .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
   }, [metricBuilderOptions, customMetricNames]);
+
+  const percentileStats = useMemo(() => {
+    return Array.from(new Set([
+      ...allStats,
+      ...metricBuilderOptions,
+      ...customMetricNames,
+      ...dbNumericStats
+    ])).filter(Boolean);
+  }, [allStats, metricBuilderOptions, customMetricNames, dbNumericStats]);
 
   const customMetricMap = useMemo(() => {
     const m = new Map();
@@ -2911,9 +2693,50 @@ export default function App(){
   const [cmOperation, setCmOperation] = useState("add");
   const [cmColor, setCmColor] = useState("#FF6B6B");
 
-  /* ---------- Value model config ---------- */
-  const [valueCfg, setValueCfg] = useStickyState("value:cfg", DEFAULT_VALUE_CONFIG);
-  const safeValueCfg = useMemo(() => normalizeValueCfg(valueCfg), [valueCfg]);
+  const addStatFilter = useCallback(() => {
+    const fallbackStat = metricBuilderOptions.includes("Goals")
+      ? "Goals"
+      : (metricBuilderOptions[0] || "");
+    setStatFilters(prev => {
+      const base = Array.isArray(prev) ? prev : [];
+      return [...base, { stat: fallbackStat, op: ">=", value: "" }];
+    });
+  }, [metricBuilderOptions, setStatFilters]);
+
+  const updateStatFilter = useCallback((idx, patch) => {
+    setStatFilters(prev => {
+      const base = Array.isArray(prev) ? [...prev] : [];
+      if (!base[idx]) return base;
+      base[idx] = { ...base[idx], ...patch };
+      return base;
+    });
+  }, [setStatFilters]);
+
+  const removeStatFilter = useCallback((idx) => {
+    setStatFilters(prev => {
+      const base = Array.isArray(prev) ? prev : [];
+      return base.filter((_, i) => i !== idx);
+    });
+  }, [setStatFilters]);
+
+  const clearStatFilters = useCallback(() => {
+    setStatFilters([]);
+  }, [setStatFilters]);
+
+  const upsertStatFilter = useCallback((stat, op, value) => {
+    if (!stat) return;
+    setStatFilters(prev => {
+      const base = Array.isArray(prev) ? [...prev] : [];
+      const idx = base.findIndex(f => String(f?.stat || "") === stat && String(f?.op || ">=") === op);
+      const next = { stat, op, value: String(value) };
+      if (idx >= 0) {
+        base[idx] = next;
+      } else {
+        base.push(next);
+      }
+      return base;
+    });
+  }, [setStatFilters]);
 
   const clearAppCache = useCallback(() => {
     const confirmed = window.confirm("Clear saved app settings and selections, then reload?");
@@ -2927,106 +2750,6 @@ export default function App(){
     setStatus("Cache cleared. Reloading...");
     window.location.reload();
   }, [setStatus]);
-
-  /* ---------- Dynamic value anchoring ---------- */
-  const tierAverages = useMemo(() => {
-    const tierGroups = { elite: [], strong: [], solid: [], growth: [], develop: [] };
-    
-    // Group rows by league tier and collect game values
-    for (const r of rows) {
-      const league = String(getCell(r, "League") || "");
-      const group = leagueGroupOf(league);
-      const gameVal = parseMoneyRange(getCell(r, "Transfer Value") || "").mid;
-      
-      // Only include finite, positive values with reasonable contract scenarios
-      if (Number.isFinite(gameVal) && gameVal > 0) {
-        const contractExpiry = getCell(r, "Expires") || "";
-        const contractMult = contractExpiryMultiplier(contractExpiry, gameMonth, gameYear);
-        
-        // Adjust for contract expiry to get "full value" for anchoring
-        const adjustedVal = gameVal / Math.max(contractMult, 0.15); // Avoid division by very small numbers
-        tierGroups[group].push(adjustedVal);
-      }
-    }
-    
-    // Calculate robust statistics for each tier (using median and IQR)
-    const averages = {};
-    const adjustments = {};
-    const expectedAverages = { 
-      elite: 50_000_000, 
-      strong: 8_000_000, 
-      solid: 3_000_000, 
-      growth: 1_500_000, 
-      develop: 800_000 
-    };
-    
-    for (const [tier, values] of Object.entries(tierGroups)) {
-      if (values.length >= 3) {
-        // Use median instead of mean for better robustness against outliers
-        const sorted = [...values].sort((a, b) => a - b);
-        const median = sorted[Math.floor(sorted.length / 2)];
-        
-        // Calculate interquartile range for outlier filtering
-        const q1 = sorted[Math.floor(sorted.length * 0.25)];
-        const q3 = sorted[Math.floor(sorted.length * 0.75)];
-        const iqr = q3 - q1;
-        
-        // Filter outliers and recalculate
-        const filtered = values.filter(v => v >= (q1 - 1.5 * iqr) && v <= (q3 + 1.5 * iqr));
-        
-        if (filtered.length > 0) {
-          averages[tier] = filtered.reduce((a, b) => a + b, 0) / filtered.length;
-        } else {
-          averages[tier] = median;
-        }
-      } else if (values.length > 0) {
-        // Small sample size, use simple average
-        averages[tier] = values.reduce((a, b) => a + b, 0) / values.length;
-      } else {
-        // No data, use fallback
-        averages[tier] = expectedAverages[tier];
-      }
-      
-      // Calculate adjustment factor with progressive dampening
-      const actual = averages[tier];
-      const expected = expectedAverages[tier];
-      const ratio = actual / expected;
-      
-      // Apply progressive dampening based on sample size and ratio magnitude
-      const sampleWeight = Math.min(values.length / 20, 1.0); // Full weight at 20+ samples
-      const dampingFactor = tier === 'elite' ? 0.4 : 0.5; // More conservative for elite
-      
-      // Limit extreme adjustments more aggressively
-      const clampedRatio = Math.min(Math.max(ratio, 0.4), 2.5);
-      const dampedAdjustment = Math.pow(clampedRatio, dampingFactor);
-      
-      // Blend with default based on sample size
-      adjustments[tier] = 1.0 + sampleWeight * (dampedAdjustment - 1.0);
-    }
-    
-    return { averages, adjustments, sampleSizes: Object.fromEntries(Object.entries(tierGroups).map(([k, v]) => [k, v.length])) };
-  }, [rows, gameMonth, gameYear]);
-
-  /* ---------- Value model config with dynamic anchoring ---------- */
-  const dynamicValueCfg = useMemo(() => {
-    const base = { ...safeValueCfg };
-    
-    // Apply dynamic scaling to base scales based on loaded data
-    base.baseScales = {};
-    for (const [tier, scale] of Object.entries(safeValueCfg.baseScales || {})) {
-      const adjustment = tierAverages.adjustments[tier] || 1.0;
-      base.baseScales[tier] = scale * adjustment;
-    }
-    
-    // Also store the anchoring info for debugging/display
-    base._anchoringInfo = {
-      averages: tierAverages.averages,
-      adjustments: tierAverages.adjustments,
-      sampleSizes: tierAverages.sampleSizes
-    };
-    
-    return base;
-  }, [safeValueCfg, tierAverages]);
 
   /* ---------- Computation scope ---------- */
   const SCOPE_OPTIONS = ["Filtered Cohort","All Loaded","Role Baseline"];
@@ -3079,52 +2802,124 @@ export default function App(){
     });
   });
 
+  const MAX_UPLOAD_FILES = 10;
+  const MAX_UPLOAD_PLAYERS = 25000;
+  const SUPPORTED_UPLOAD_EXTENSIONS = new Set(["csv", "html", "htm"]);
+
+  const parseSupportedDataFile = async (file) => {
+    const ext = file.name.toLowerCase().split(".").pop();
+
+    if (ext === "csv") {
+      const text = await file.text();
+      const headerLine = String(text.split(/\r?\n/, 1)[0] || "");
+      const delimiterCandidates = [",", ";", "\t", "|"];
+      const delimiterCounts = Object.fromEntries(
+        delimiterCandidates.map(d => [d, countDelimitedColumns(headerLine, d)])
+      );
+      const bestDelimiter = delimiterCandidates.reduce((best, d) =>
+        (delimiterCounts[d] > delimiterCounts[best] ? d : best), delimiterCandidates[0]
+      );
+
+      let res = await parseCsvFile(file);
+      const parsedFields = res?.meta?.fields || [];
+      const parsedCount = parsedFields.length;
+      const expectedCount = delimiterCounts[bestDelimiter] || 0;
+      const needsFallback =
+        (parsedCount <= 1 && expectedCount > 1) ||
+        (parsedCount > 1 && expectedCount > 1 && parsedCount < Math.floor(expectedCount * 0.75));
+
+      if (needsFallback) {
+        res = await parseCsvFile(file, { delimiter: bestDelimiter });
+      }
+
+      const rowsN = normalizeHeadersRowObjects(res.data || []);
+      const csvFields = (res?.meta?.fields || []).map(f => mapHeaderName(f)).filter(Boolean);
+      const inferred = Array.from(new Set(rowsN.flatMap(r => Object.keys(r || {}))));
+      const finalColumns = Array.from(new Set([...csvFields, ...inferred]));
+
+      return { rows: rowsN, columns: finalColumns };
+    }
+
+    const rowsN = await parseHtmlTable(file);
+    const normalizedRows = normalizeHeadersRowObjects(rowsN);
+    const finalColumns = Array.from(new Set(normalizedRows.flatMap(r => Object.keys(r || {}))));
+    return { rows: normalizedRows, columns: finalColumns };
+  };
+
   async function handleFile(e){
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+
+    if (files.length > MAX_UPLOAD_FILES) {
+      setStatus(`Please select up to ${MAX_UPLOAD_FILES} files at once.`);
+      return;
+    }
+
     try {
-      setStatus(`Loading ${file.name}…`);
-      const ext = file.name.toLowerCase().split(".").pop();
-      if (ext === "csv") {
-        const text = await file.text();
-        const headerLine = String(text.split(/\r?\n/, 1)[0] || "");
-        const delimiterCandidates = [",", ";", "\t", "|"];
-        const delimiterCounts = Object.fromEntries(
-          delimiterCandidates.map(d => [d, countDelimitedColumns(headerLine, d)])
-        );
-        const bestDelimiter = delimiterCandidates.reduce((best, d) =>
-          (delimiterCounts[d] > delimiterCounts[best] ? d : best), delimiterCandidates[0]
-        );
+      const mergedRows = [];
+      const mergedColumns = new Set();
+      const unsupportedFiles = [];
+      const failedFiles = [];
+      let loadedFileCount = 0;
+      let reachedPlayerCap = false;
 
-        let res = await parseCsvFile(file);
-        const parsedFields = res?.meta?.fields || [];
-        const parsedCount = parsedFields.length;
-        const expectedCount = delimiterCounts[bestDelimiter] || 0;
-        const needsFallback =
-          (parsedCount <= 1 && expectedCount > 1) ||
-          (parsedCount > 1 && expectedCount > 1 && parsedCount < Math.floor(expectedCount * 0.75));
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const ext = file.name.toLowerCase().split(".").pop();
 
-        if (needsFallback) {
-          res = await parseCsvFile(file, { delimiter: bestDelimiter });
+        if (mergedRows.length >= MAX_UPLOAD_PLAYERS) {
+          reachedPlayerCap = true;
+          break;
         }
 
-        const rowsN = normalizeHeadersRowObjects(res.data || []);
-        const csvFields = (res?.meta?.fields || []).map(f => mapHeaderName(f)).filter(Boolean);
-        const inferred = Array.from(new Set(rowsN.flatMap(r => Object.keys(r || {}))));
-        const finalColumns = Array.from(new Set([...csvFields, ...inferred]));
-        setDatasetColumns(finalColumns);
-        setRows(rowsN);
-        setStatus(`Loaded ${rowsN.length} rows, ${finalColumns.length} columns. Player names normalized (accents removed).`);
-      } else if (ext === "html" || ext === "htm") {
-        const rowsN = await parseHtmlTable(file);
-        const normalizedRows = normalizeHeadersRowObjects(rowsN);
-        const finalColumns = Array.from(new Set(normalizedRows.flatMap(r => Object.keys(r || {}))));
-        setDatasetColumns(finalColumns);
-        setRows(normalizedRows);
-        setStatus(`Loaded ${rowsN.length} rows, ${finalColumns.length} columns from HTML table. Player names normalized (accents removed).`);
-      } else {
-        setStatus("Unsupported file. Please load CSV or HTML.");
+        if (!SUPPORTED_UPLOAD_EXTENSIONS.has(ext)) {
+          unsupportedFiles.push(file.name);
+          continue;
+        }
+
+        setStatus(`Loading ${file.name} (${i + 1}/${files.length})...`);
+
+        try {
+          const { rows, columns } = await parseSupportedDataFile(file);
+          loadedFileCount++;
+          columns.forEach(col => mergedColumns.add(col));
+
+          if (mergedRows.length < MAX_UPLOAD_PLAYERS) {
+            const remaining = MAX_UPLOAD_PLAYERS - mergedRows.length;
+            if (rows.length > remaining) {
+              mergedRows.push(...rows.slice(0, remaining));
+              reachedPlayerCap = true;
+              break;
+            }
+            mergedRows.push(...rows);
+          }
+        } catch (err) {
+          failedFiles.push(file.name);
+          console.error(err);
+        }
       }
+
+      if (!loadedFileCount) {
+        if (unsupportedFiles.length && !failedFiles.length) {
+          setStatus("Unsupported files. Please load CSV or HTML.");
+          return;
+        }
+        setStatus("No data loaded. Please check your files and try again.");
+        return;
+      }
+
+      const finalColumns = Array.from(mergedColumns);
+      setDatasetColumns(finalColumns);
+      setRows(mergedRows);
+
+      const warningBits = [];
+      if (unsupportedFiles.length) warningBits.push(`Skipped ${unsupportedFiles.length} unsupported file${unsupportedFiles.length === 1 ? "" : "s"}`);
+      if (failedFiles.length) warningBits.push(`Failed to parse ${failedFiles.length} file${failedFiles.length === 1 ? "" : "s"}`);
+      if (reachedPlayerCap) warningBits.push(`Capped at ${MAX_UPLOAD_PLAYERS} players total`);
+      const warnings = warningBits.length ? ` (${warningBits.join(". ")})` : "";
+
+      setStatus(`Loaded ${mergedRows.length} rows from ${loadedFileCount} file${loadedFileCount === 1 ? "" : "s"}, ${finalColumns.length} columns. Player names normalized (accents removed).${warnings}`);
     } catch (err) {
       console.error(err);
       setStatus(`Failed: ${String(err?.message || err)}`);
@@ -3228,16 +3023,33 @@ export default function App(){
     reader.readAsText(file);
   }, [metricBuilderOptions, setCustomMetrics]);
 
-  /* ---------- Filtered rows (uses only applied searchQuery) ---------- */
-  const filteredRows = useMemo(() => {
+  /* ---------- Filtered rows (live search + stat filters) ---------- */
+  const activeStatFilters = useMemo(() => {
+    return (Array.isArray(statFilters) ? statFilters : [])
+      .map(f => ({
+        stat: String(f?.stat || ""),
+        op: String(f?.op || ">="),
+        value: String(f?.value ?? "").trim()
+      }))
+      .filter(f => f.stat && f.value !== "" && Number.isFinite(Number(f.value)));
+  }, [statFilters]);
+
+  // Percentile baseline cohort intentionally ignores stat filters so percentiles stay stable.
+  const baseFilteredRows = useMemo(() => {
     const cohort = new Set(posCohort.map(normToken));
+    const minHeightIn = parseHeightToInches(minHeight);
+    const maxHeightIn = parseHeightToInches(maxHeight);
     return rows.filter(r => {
       const mins = numerify(r["Minutes"]);
       const age = numerify(r["Age"]);
+      const heightIn = parseHeightToInches(getCell(r, "Height"));
       const tokens = expandFMPositions(r["Pos"]);
       const hasPos = tokens.some(t => cohort.has(normToken(t)));
       const minutesOk = !Number.isFinite(minMinutes) ? true : (Number.isFinite(mins) ? mins >= minMinutes : false);
       const ageOk = !Number.isFinite(maxAge) ? true : (!Number.isFinite(age) ? true : age <= maxAge);
+      const minHeightOk = !Number.isFinite(minHeightIn) ? true : (Number.isFinite(heightIn) ? heightIn >= minHeightIn : false);
+      const maxHeightOk = !Number.isFinite(maxHeightIn) ? true : (Number.isFinite(heightIn) ? heightIn <= maxHeightIn : false);
+      const heightOk = minHeightOk && maxHeightOk;
       
       // Normalize search query and fields for better matching
       const q = normalizePlayerName((searchQuery || "").trim().toLowerCase());
@@ -3245,11 +3057,49 @@ export default function App(){
       const club = normalizePlayerName(String(r["Club"]||"").toLowerCase());
       const pos = String(r["Pos"]||"").toLowerCase();
       const qOk = !q || name.includes(q) || club.includes(q) || pos.includes(q);
-      return hasPos && minutesOk && ageOk && qOk;
-    });
-  }, [rows, posCohort, minMinutes, maxAge, searchQuery]);
 
-  /* ---------- Percentile scope rows & index ---------- */
+      return hasPos && minutesOk && ageOk && heightOk && qOk;
+    });
+  }, [rows, posCohort, minMinutes, maxAge, minHeight, maxHeight, searchQuery]);
+
+  const quickStatPresets = useMemo(() => {
+    const pickMetric = (...candidates) => candidates.find(c => metricBuilderOptions.includes(c)) || "";
+    const out = [];
+
+    const goals = pickMetric("Goals", "Gls");
+    if (goals) {
+      out.push({ label: "Goals >= 10", stat: goals, op: ">=", value: 10 });
+      out.push({ label: "Goals >= 15", stat: goals, op: ">=", value: 15 });
+    }
+
+    const assists = pickMetric("Assist", "Assists", "Ast");
+    if (assists) out.push({ label: "Assists >= 8", stat: assists, op: ">=", value: 8 });
+
+    const goalsPer90 = pickMetric("Goals / 90", "Gls/90", "Goals per 90 minutes");
+    if (goalsPer90) out.push({ label: "Goals/90 >= 0.45", stat: goalsPer90, op: ">=", value: 0.45 });
+
+    const xgPer90 = pickMetric("xG/90");
+    if (xgPer90) out.push({ label: "xG/90 >= 0.35", stat: xgPer90, op: ">=", value: 0.35 });
+
+    return out;
+  }, [metricBuilderOptions]);
+
+  // Base percentile index uses the pre-stat-filter cohort so stat filters don't shift percentiles.
+  const pctIndex = useMemo(() => buildPercentileIndex(baseFilteredRows, percentileStats), [baseFilteredRows, percentileStats]);
+  const filteredRows = useMemo(() => {
+    return evaluateStatFilterGroup(baseFilteredRows, activeStatFilters, {
+      logic: statFilterLogic,
+      valueMode: statFilterMode,
+      percentileIndex: pctIndex,
+      metricResolver: (row, statName) => metricValue(row, statName)
+    });
+  }, [baseFilteredRows, activeStatFilters, statFilterLogic, statFilterMode, pctIndex, metricValue]);
+  const allLoadedRolePctIndex = useMemo(() => buildPercentileIndex(rows, allStats), [rows, allStats]);
+  const filteredRolePctIndex = useMemo(() => buildPercentileIndex(filteredRows, allStats), [filteredRows, allStats]);
+  const rolePctByRoleAllLoaded = useMemo(() => buildRolePercentileByRole(rows, rows), [rows]);
+  const rolePctByRoleFiltered = useMemo(() => buildRolePercentileByRole(filteredRows, rows), [filteredRows, rows]);
+
+  /* ---------- Percentile scope rows ---------- */
   const scopeRows = useMemo(() => {
     if (compScope === "All Loaded") return rows;
     if (compScope === "Role Baseline") {
@@ -3262,8 +3112,28 @@ export default function App(){
     return filteredRows;
   }, [compScope, rows, filteredRows, role]);
 
-  // Base percentile index - now defaults to filtered cohort for consistency
-  const pctIndex = useMemo(() => buildPercentileIndex(filteredRows, allStats), [filteredRows, allStats]);
+  const roleScorePctIndex = useMemo(() => {
+    if (compScope === "All Loaded") return allLoadedRolePctIndex;
+    if (compScope === "Role Baseline") return allLoadedRolePctIndex;
+    return filteredRolePctIndex;
+  }, [compScope, allLoadedRolePctIndex, filteredRolePctIndex]);
+  const roleScorePctByRole = useMemo(() => {
+    if (compScope === "All Loaded") return null;
+    if (compScope === "Role Baseline") return rolePctByRoleAllLoaded;
+    return rolePctByRoleFiltered;
+  }, [compScope, rolePctByRoleAllLoaded, rolePctByRoleFiltered]);
+  const allLoadedNumericStats = useMemo(() => {
+    if (!rows.length) return [];
+    const cols = datasetColumns.length
+      ? datasetColumns
+      : Array.from(new Set(rows.flatMap(r => Object.keys(r || {}))));
+    return cols.filter(col => rows.some(rr => Number.isFinite(numerify(getCell(rr, col)))));
+  }, [rows, datasetColumns]);
+  const allLoadedPctIndex = useMemo(() => buildPercentileIndex(rows, percentileStats), [rows, percentileStats]);
+  const filteredAvgRating = useMemo(
+    () => averageNumericValue(filteredRows, ["Avg Rating", "Av Rat", "Rating"]),
+    [filteredRows]
+  );
   
   // Scope-specific percentile index for display
   // If the scope reduces to <=1 rows (e.g. user filtered to a single player), fall back
@@ -3274,7 +3144,8 @@ export default function App(){
     } catch { return rows; }
   }, [scopeRows, rows]);
 
-  const scopePctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, allStats), [displayScopeRows, allStats]);
+  const scopePctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, percentileStats), [displayScopeRows, percentileStats]);
+  const scopeAllLoadedPctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, percentileStats), [displayScopeRows, percentileStats]);
 
   /* ---------- Players list & selection sanity ---------- */
   const players = useMemo(() => filteredRows.map(r => r["Name"]).filter(Boolean), [filteredRows]);
@@ -3283,23 +3154,9 @@ export default function App(){
     return Array.from(new Set(clubs)).sort();
   }, [rows]);
   
-  const handleSearch = useCallback((value) => {
-    setSearchQuery(value);
-    setSearchApplied(!!value);
-    // Auto-select player if exact match and clear search for better UX
-    if (value && players.includes(value)) {
-      setPlayer(value);
-      // Clear search after selection to show full scatter plots
-      setTimeout(() => {
-        setSearchQuery("");
-        setSearchApplied(false);
-      }, 100);
-    }
-  }, [setSearchQuery, setSearchApplied, players, setPlayer]);
-  
   const clearSearch = useCallback(()=>{
-    handleSearch("");
-  }, [handleSearch]);
+    setSearchQuery("");
+  }, [setSearchQuery]);
   
   useEffect(() => {
     if (!player && players.length) setPlayer(players[0]);
@@ -3314,136 +3171,46 @@ export default function App(){
     return m;
   }, [filteredRows]);
 
-  const roleScoreOfRow = useCallback((r, roleName) => Number(roleScoreFor(r, roleName, scopePctIndex) || 0), [scopePctIndex]);
+  const roleScoreOfRow = useCallback((r, roleName) => Number(roleScoreFor(r, roleName, roleScorePctIndex, roleScorePctByRole) || 0), [roleScorePctIndex, roleScorePctByRole]);
+  const autoRoleSelectionEnabled = roleSelectionMode === "Auto Switch";
 
   const bestRoleCache = useMemo(() => {
     const map = new Map();
-    for (const r of filteredRows) map.set(r["Name"], bestNearRole(r, pctIndex)); // {role, score}
+    for (const r of filteredRows) map.set(r["Name"], bestNearRole(r, roleScorePctIndex, roleScorePctByRole)); // {role, score}
     return map;
-  }, [filteredRows, pctIndex]);
+  }, [filteredRows, roleScorePctIndex, roleScorePctByRole]);
 
-  function bestRoleRank(name){
-    const r = rowByName.get(name);
-    if (!r) return { rank: NaN, of: 0, role: null, score: 0 };
-    const br = bestRoleCache.get(name) || { role:null, score:0 };
-    if (!br.role) return { rank: NaN, of: 0, role: null, score: 0 };
-    const base = new Set((ROLE_BASELINES[br.role]||[]).map(normToken));
-    const cohort = filteredRows.filter(row => {
-      const toks = expandFMPositions(row["Pos"]);
-      return toks.some(t=>base.has(normToken(t)));
-    });
-    const ranked = cohort
-      .map(rr => ({ n: rr["Name"], s: roleScoreOfRow(rr, br.role) }))
-      .sort((a,b)=>b.s - a.s);
-    const idx = ranked.findIndex(x => x.n === name);
-    return { rank: idx>=0? idx+1 : NaN, of: ranked.length, role: br.role, score: br.score };
-  }
+  const selectedPlayerTopRoles = useMemo(() => {
+    const selectedRow = rowByName.get(player);
+    if (!selectedRow) return [];
+    const tokens = expandFMPositions(getCell(selectedRow, "Pos"));
+    const ranked = Object.keys(ROLE_BOOK)
+      .filter(roleName => {
+        const baseline = ROLE_BASELINES[roleName] || [];
+        return sharesAny(tokens, baseline);
+      })
+      .map(roleName => ({ roleName, score: roleScoreOfRow(selectedRow, roleName) }))
+      .filter(x => Number.isFinite(x.score))
+      .sort((a, b) => b.score - a.score);
+    return ranked.map(x => x.roleName);
+  }, [rowByName, player, roleScoreOfRow]);
 
-  /* ---------- Wage parsing (current wage from dataset) ---------- */
-  const wageWeeklyOf = useCallback((row)=>{
-    const raw = getCell(row, "Wage");
-    const v = parseOneMoney(raw);
-    return Number.isFinite(v) ? v : NaN;
-  },[]);
-
-  /* ---------- Enhanced value breakdown for detailed analysis ---------- */
-  const getValueBreakdown = useCallback((name) => {
-    const r = rowByName.get(name);
-    if (!r) return null;
-    
-    const result = trueValueOf(r, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows);
-    const { valueM, bestRole, bestScore, group, contractMultiplier, posFamily, 
-            performanceTier, versatilityData, leagueContextBonus, components } = result;
-    
-    // Get game value for market comparison
-    const gameValueRaw = getCell(r, "Transfer Value");
-    const gameValue = parseMoneyRange(gameValueRaw).mid || 0;
-    
-    return {
-      player: name,
-      totalValue: valueM * 1e6,
-      gameValue: gameValue,
-      bestRole,
-      bestScore,
-      league: String(getCell(r, "League") || ""),
-      leagueGroup: group,
-      position: getCell(r, "Pos") || "",
-      posFamily,
-      age: numCell(r, "Age"),
-      minutes: numCell(r, "Minutes"),
-      contractExpiry: getCell(r, "Expires") || "",
-      contractMultiplier,
-      performanceTier,
-      versatilityData,
-      leagueContextBonus,
-      components,
-      recommendations: {
-        buyPrice: buyAtOf(r, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows),
-        fairWage: weeklyWageOf(r, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows),
-        maxWage: weeklyWageMaxOf(r, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows)
-      }
-    };
-  }, [rowByName, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows]);
-
-  /* ---------- Market-adjusted value wrapper with enhanced modeling ---------- */
-  const marketAdjustedValueM = useCallback((name)=>{
-    const r = rowByName.get(name); if (!r) return NaN;
-    const base = trueValueOf(r, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows); // Enhanced with comparative data
-    let { valueM, bestRole, bestScore, group, components } = base;
-
-    // rank uplift (scaled by rank share)
-    const rk = bestRoleRank(name);
-    const rankShare = Number.isFinite(rk.rank) && rk.of>0 ? (rk.of - rk.rank + 1) / rk.of : 0;
-    const rankFactor = 1 + (dynamicValueCfg.topRankPremiumMax || 0.60) * rankShare * (group === "elite" ? 1 : 0.45);
-    valueM *= rankFactor;
-
-    // slight extra for elite forwards (kept conservative)
-    if (group === "elite" && getPositionalFamily(expandFMPositions(getCell(r,"Pos"))) === "FW") {
-      const fwPrem = dynamicValueCfg.eliteFwPremium || 0.25;
-      valueM *= (1 + fwPrem * 0.7);
+  const prevPlayerForScatterRef = useRef("");
+  useEffect(() => {
+    if (!autoRoleSelectionEnabled) {
+      prevPlayerForScatterRef.current = player;
+      return;
     }
+    if (!player || prevPlayerForScatterRef.current === player) return;
+    prevPlayerForScatterRef.current = player;
 
-    // enforce elite floors for very top scorers
-    if (group === "elite" && bestScore >= 90) {
-      const floors = dynamicValueCfg.eliteTopFloorM || {};
-      const famKey = getPositionalFamily(expandFMPositions(getCell(r,"Pos"))) || "MF";
-      const floorM = floors[famKey] || 0;
-      if (valueM < floorM) valueM = floorM;
-    }
+    const nextRoleX = selectedPlayerTopRoles[0] || Object.keys(ROLE_STATS)[0] || "";
+    const nextRoleY = selectedPlayerTopRoles[1] || selectedPlayerTopRoles[0] || Object.keys(ROLE_STATS)[1] || nextRoleX;
+    if (nextRoleX) setRoleX(nextRoleX);
+    if (nextRoleY) setRoleY(nextRoleY);
+  }, [autoRoleSelectionEnabled, player, selectedPlayerTopRoles, setRoleX, setRoleY]);
 
-    // damping (log-space compression) to reduce extreme tails (stronger)
-    try {
-      const safe = Math.max(0.1, valueM);
-      const dampFactor = (group === "elite") ? 0.90 : 0.95;
-      valueM = Math.exp(Math.log(safe) * dampFactor);
-    } catch (err) { /* ignore */ }
-
-    return valueM;
-  }, [rowByName, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows]);
-
-  /* ---------- True value, buyAt (enhanced) ---------- */
-  const trueValue = useCallback((name)=>{ const m = marketAdjustedValueM(name); return Number.isFinite(m) ? m*1e6 : NaN; }, [marketAdjustedValueM]);
-  const buyAt = useCallback((name)=>{ 
-    const r = rowByName.get(name); 
-    if (!r) return NaN;
-    return buyAtOf(r, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows);
-  }, [rowByName, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows]);
-
-  /* ---------- Enhanced wage calculations ---------- */
-  const fairWage = useCallback((name)=>{ 
-    const r = rowByName.get(name); 
-    if (!r) return NaN;
-    return weeklyWageOf(r, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows);
-  }, [rowByName, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows]);
-
-  const maxWage = useCallback((name)=>{ 
-    const r = rowByName.get(name); 
-    if (!r) return NaN;
-    const modelMax = weeklyWageMaxOf(r, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows);
-    const current = wageWeeklyOf(r);
-    const respect = Number.isFinite(current) ? current * (dynamicValueCfg.wageRespectCurrentMult || 1.10) : 0;
-    return Math.max(modelMax, respect);
-  }, [rowByName, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows, wageWeeklyOf]);  /* ---------- Scatter datasets ---------- */
+  /* ---------- Scatter datasets ---------- */
   const roleMatrixPoints = useMemo(()=>{
     return filteredRows.map(r => ({
       name: r["Name"],
@@ -3468,14 +3235,18 @@ export default function App(){
   /* ===================== Modes ===================== */
 
   function PlayerProfileMode(){
+    const [profileRole, setProfileRole] = useStickyState("profile:role", "");
+    const [profileMatrixRoleA, setProfileMatrixRoleA] = useStickyState("profile:matrixRoleA", "");
+    const [profileMatrixRoleB, setProfileMatrixRoleB] = useStickyState("profile:matrixRoleB", "");
+    const [profileMatrixPool, setProfileMatrixPool] = useStickyState("profile:matrixPool", "Positionally Relevant");
     const r = rowByName.get(player);
     const headerRef = useRef(null);
     const bestBoxRef = useRef(null);
-    const wageRef = useRef(null);
+    const allStatsRef = useRef(null);
 
     useEffect(()=>{ if (!headerRef.current) return; const t=attachTooltip(headerRef.current); headerRef.current.__tip=t; return ()=>t?.destroy?.(); },[]);
     useEffect(()=>{ if (!bestBoxRef.current) return; const t=attachTooltip(bestBoxRef.current); bestBoxRef.current.__tip=t; return ()=>t?.destroy?.(); },[]);
-    useEffect(()=>{ if (!wageRef.current) return; const t=attachTooltip(wageRef.current); wageRef.current.__tip=t; return ()=>t?.destroy?.(); },[]);
+    useEffect(()=>{ if (!allStatsRef.current) return; const t=attachTooltip(allStatsRef.current); allStatsRef.current.__tip=t; return ()=>t?.destroy?.(); },[]);
 
     if (!r) return <div className="card"><div className="cardBody">Select a player</div></div>;
 
@@ -3486,34 +3257,29 @@ export default function App(){
     const roleScores = Object.keys(ROLE_BOOK).map(roleName => {
       const baseline = ROLE_BASELINES[roleName] || [];
       if (!sharesAny(expandFMPositions(getCell(r,"Pos")), baseline)) return null;
-      return { roleName, score: roleScoreFor(r, roleName, pctIndex) || 0 };
+      return { roleName, score: roleScoreFor(r, roleName, roleScorePctIndex, roleScorePctByRole) || 0 };
     }).filter(Boolean).sort((a,b)=>b.score-a.score);
     
     // Use the fresh calculation for consistency
     const bestRole = roleScores.length > 0 ? roleScores[0].roleName : cachedRole;
     const bestScore = roleScores.length > 0 ? roleScores[0].score : Number(br.score || 0);
 
-    // Calculate enhanced true value to match the ValueBreakdown component
-    const enhancedValueResult = trueValueOf(r, pctIndex, dynamicValueCfg, gameMonth, gameYear, filteredRows);
-    const enhancedTrueValue = enhancedValueResult.valueM * 1000000; // Convert back to pounds
-
     // Use calculated roleScores for top roles
     const topRoles = roleScores.slice(0,2).map(x => x.roleName);
     const topRoleA = topRoles[0] || bestRole;
     const topRoleB = topRoles[1] || Object.keys(ROLE_STATS)[0] || "";
+    const matrixRoleA = Object.keys(ROLE_BOOK).includes(profileMatrixRoleA) ? profileMatrixRoleA : topRoleA;
+    const matrixRoleB = Object.keys(ROLE_BOOK).includes(profileMatrixRoleB) ? profileMatrixRoleB : topRoleB;
+    const matrixRoleABaseline = ROLE_BASELINES[matrixRoleA] || [];
+    const matrixRoleBBaseline = ROLE_BASELINES[matrixRoleB] || [];
+    const matrixRelevantTokens = new Set([...matrixRoleABaseline, ...matrixRoleBBaseline].map(normToken));
 
-    const statsBestRole = ROLE_STATS[bestRole] || [];
-    const radarSeries = [{
-      name: `${player} — ${bestRole}`,
-      color: "var(--accent)",
-      slices: statsBestRole.map(st => {
-        const raw = numerify(getCell(r, st));
-        // Use the main pctIndex for core calculations and scopePctIndex for display
-        const corePct = percentileFor(pctIndex, st, raw);
-        const displayPct = percentileFor(scopePctIndex, st, raw);
-        return { label: LABELS.get(st)||st, raw, pct: displayPct, corePct };
-      })
-    }];
+    const selectableRoles = roleScores.map(x => x.roleName);
+    const roleOptions = selectableRoles.length ? selectableRoles : Object.keys(ROLE_STATS);
+    const currentProfileRole = roleOptions.includes(profileRole) ? profileRole : (roleOptions[0] || bestRole);
+    const roleScoreMap = new Map(roleScores.map(x => [x.roleName, x.score]));
+    const currentProfileRoleScore = roleScoreMap.get(currentProfileRole) ?? bestScore;
+    const statsProfileRole = ROLE_STATS[currentProfileRole] || [];
 
     const mins = numerify(r["Minutes"]);
     const age  = numerify(r["Age"]);
@@ -3526,16 +3292,103 @@ export default function App(){
 
     const gameValRaw = getCell(r,"Transfer Value");
     const gameValMid = parseMoneyRange(gameValRaw).mid;
-  // Apply -10% display adjustment as requested
-  const tv = trueValue(player) * 0.9;
-  const ba = buyAt(player) * 0.9;
-
-    const currentW = wageWeeklyOf(r);
-    const fw = fairWage(player);
-    const mw = maxWage(player);
+    const avgRating = numerify(getCell(r, "Avg Rating") || getCell(r, "Av Rat") || getCell(r, "Rating"));
+    const wage = getCell(r, "Wage") || "—";
+    const height = getCell(r, "Height") || "—";
+    const weight = getCell(r, "Weight") || "—";
+    const preferredFoot = getCell(r, "Preferred Foot") || "—";
+    const homeGrown = getCell(r, "Home-Grown Status") || "—";
+    const nat = getCell(r, "Nat") || "";
+    const secondNatRaw = getCell(r, "2nd Nat") || "";
+    const normalizeNat = (v) => keyNorm(String(v || ""));
+    const sanitizeSecondNat = (v) => {
+      const t = String(v || "").trim();
+      if (!t || /^[-–—\s]+$/.test(t) || /^none$/i.test(t) || /^n\/a$/i.test(t)) return "";
+      if (normalizeNat(t) === normalizeNat(nat)) return "";
+      return t;
+    };
+    const secondNat = sanitizeSecondNat(secondNatRaw);
+    const info = getCell(r, "Info") || "";
 
     // Contract expiry information
     const contractInfo = getContractInfo(r, gameMonth, gameYear);
+
+    const profilePills = [
+      nat ? `Nat: ${nat}` : null,
+      preferredFoot !== "—" ? `Foot: ${preferredFoot}` : null,
+      info && info !== "—" ? `${info}` : null,
+      bestRole ? `Best Role: ${bestRole}` : null,
+      Number.isFinite(bestScore) ? `Best Score: ${bestScore.toFixed(2)}` : null,
+      currentProfileRole ? `Pizza Role: ${currentProfileRole}` : null,
+      Number.isFinite(currentProfileRoleScore) ? `Pizza Score: ${currentProfileRoleScore.toFixed(2)}` : null,
+      Number.isFinite(age) ? `Age: ${tf(age,0)}` : null,
+      height && height !== "—" ? `Height: ${height}` : null,
+      weight && weight !== "—" ? `Weight: ${weight}` : null,
+      wage && wage !== "—" ? `Wage: ${wage}` : null,
+      Number.isFinite(mins) ? `Minutes: ${tf(mins,0)}` : null,
+      Number.isFinite(goals) ? `Goals: ${tf(goals,0)}` : null,
+      Number.isFinite(assists) ? `Assists: ${tf(assists,0)}` : null,
+      Number.isFinite(avgRating) ? `Avg Rating: ${avgRating.toFixed(2)}` : null,
+      Number.isFinite(gameValMid) ? `Game Value: ${money(gameValMid)}` : (gameValRaw ? `Game Value: ${gameValRaw}` : null),
+      contractInfo?.status ? `Contract: ${contractInfo.status}` : null,
+      Number.isFinite(contractInfo?.multiplier) ? `Value Impact: ${(contractInfo.multiplier * 100).toFixed(0)}%` : null,
+      homeGrown && homeGrown !== "—" ? `Home-Grown: ${homeGrown}` : null
+    ].filter(Boolean);
+
+    const categorizeStatKey = (statName) => {
+      const k = keyNorm(statName);
+      if (k.includes("name") || k.includes("player") || k.includes("pos") || k.includes("club") || k.includes("league") ||
+          k.includes("nat") || k.includes("basedin") || k.includes("preferredfoot") || k.includes("height") ||
+          k.includes("weight") || k.includes("personality") || k.includes("mediahandling") || k.includes("homegrown") ||
+          k === "age" || k === "info") return "Profile";
+      if (k.includes("wage") || k.includes("transfervalue") || k.includes("askingprice") || k.includes("contract") || k.includes("expiry") || k.includes("expires")) return "Contract & Value";
+      if (k.includes("save") || k.includes("conced") || k.includes("cleansheet") || k.includes("xgp") || k.includes("pen") || k.includes("expectedgoalsprevented")) return "Goalkeeping";
+      if (k.includes("yellow") || k.includes("red") || k.includes("foul") || k.includes("offsid")) return "Discipline";
+      if (k.includes("header") || k.includes("aerial")) return "Aerial";
+      if (k.includes("tackle") || k.includes("intercept") || k.includes("block") || k.includes("clearance") || k.includes("mistake")) return "Defending";
+      if (k.includes("pressur") || k.includes("possessionwon") || k.includes("possessionlost")) return "Pressing & Possession";
+      if (k.includes("sprint") || k.includes("distance")) return "Physical";
+      if (k.includes("dribbl")) return "Ball Carrying";
+      if (k.includes("pass") || k.includes("progressive")) return "Passing";
+      if (k.includes("chance") || k.includes("keypass") || k.includes("expectedassist") || k === "assist" || k.includes("assists90")) return "Creativity";
+      if (k.includes("goal") || k.includes("shot") || k.includes("xg") || k.includes("conversion") || k.includes("sot") || k.includes("npxg") || k.includes("minutesgoal")) return "Shooting & Output";
+      return "Other";
+    };
+
+    const formatProfileStatValue = (statName, rawValue) => {
+      const text = String(rawValue ?? "").trim();
+      if (!text) return "—";
+      if (typeof rawValue === "string" && /[€£$]/.test(rawValue)) return text;
+      const n = numerify(rawValue);
+      if (!Number.isFinite(n)) return text;
+      const k = keyNorm(statName);
+      if (k === "age" || k.includes("minutes") || k === "goals" || k === "assist" || k.includes("cards") || k.includes("appearances")) return tf(n, 0);
+      return tf(n, 2);
+    };
+
+    const statsByCategory = {};
+    for (const [statName, rawValue] of Object.entries(r || {})) {
+      const text = String(rawValue ?? "").trim();
+      if (!statName || text === "") continue;
+      if (keyNorm(statName) === "2ndnat" && !secondNat) continue;
+      const category = categorizeStatKey(statName);
+      const effectiveValue = keyNorm(statName) === "2ndnat" ? secondNat : rawValue;
+      const numericVal = numerify(effectiveValue);
+      const percentile = Number.isFinite(numericVal) ? percentileFor(scopeAllLoadedPctIndex, statName, numericVal) : NaN;
+      if (!statsByCategory[category]) statsByCategory[category] = [];
+      statsByCategory[category].push({
+        stat: statName,
+        label: LABELS.get(statName) || statName,
+        value: formatProfileStatValue(statName, effectiveValue),
+        percentile
+      });
+    }
+    Object.values(statsByCategory).forEach(list => list.sort((a, b) => a.label.localeCompare(b.label)));
+    const categoryOrder = [
+      "Profile", "Contract & Value", "Shooting & Output", "Creativity", "Passing",
+      "Pressing & Possession", "Ball Carrying", "Defending", "Aerial", "Physical", "Goalkeeping", "Discipline", "Other"
+    ];
+    const statCategories = categoryOrder.filter(cat => Array.isArray(statsByCategory[cat]) && statsByCategory[cat].length);
 
     const bestPairs = allStats.map(st => {
       const raw = numerify(getCell(r, st));
@@ -3545,91 +3398,53 @@ export default function App(){
       .sort((a,b)=>b.pct-a.pct)
       .slice(0, 12);
 
-    // role matrix dataset for top roles
-    const roleMatrixForTop = useMemo(()=> {
-      const rx = topRoleA; const ry = topRoleB;
-      
-      // Get relevant positions for both roles
-      const rxPositions = ROLE_BOOK[rx]?.baseline || [];
-      const ryPositions = ROLE_BOOK[ry]?.baseline || [];
-      const relevantPositions = new Set([...rxPositions, ...ryPositions]);
-      
-      const pts = filteredRows.map(rr => ({
-        name: rr["Name"],
-        club: rr["Club"],
-        pos: expandFMPositions(rr["Pos"])[0]||"",
-        x: roleScoreOfRow(rr, rx),
-        y: roleScoreOfRow(rr, ry)
-      })).filter(p => {
-        // Only include players with finite scores and relevant positions
-        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
-        
-        // Check if player's position is relevant for either role
-        const playerPositions = expandFMPositions(filteredRows.find(r => r["Name"] === p.name)?.["Pos"] || "");
-        return playerPositions.some(pos => relevantPositions.has(pos));
-      });
-      return { pts, rx, ry };
-    }, [filteredRows, topRoleA, topRoleB, roleScoreOfRow]);
+    const matrixSourceRows = useMemo(() => {
+      const base = filteredRows;
+      if (profileMatrixPool !== "Positionally Relevant") return base;
+      if (!matrixRelevantTokens.size) return base;
+      return base.filter(rr => expandFMPositions(rr["Pos"]).some(pos => matrixRelevantTokens.has(normToken(pos))));
+    }, [filteredRows, profileMatrixPool, matrixRelevantTokens]);
+
+    const roleMatrixForProfile = useMemo(() => {
+      const pts = matrixSourceRows
+        .map(rr => ({
+          name: rr["Name"],
+          club: rr["Club"],
+          pos: primaryFMPosition(rr["Pos"]) || (expandFMPositions(rr["Pos"])[0] || ""),
+          x: roleScoreOfRow(rr, matrixRoleA),
+          y: roleScoreOfRow(rr, matrixRoleB)
+        }))
+        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+      return { pts, rx: matrixRoleA, ry: matrixRoleB };
+    }, [matrixSourceRows, matrixRoleA, matrixRoleB, roleScoreOfRow]);
+
+    const prevPlayerForProfileRef = useRef("");
+    useEffect(() => {
+      if (!autoRoleSelectionEnabled) {
+        prevPlayerForProfileRef.current = player;
+        return;
+      }
+      if (!player || prevPlayerForProfileRef.current === player) return;
+      prevPlayerForProfileRef.current = player;
+      const nextRole = bestRole || roleOptions[0] || "";
+      if (nextRole) setProfileRole(nextRole);
+    }, [autoRoleSelectionEnabled, player, bestRole, roleOptions, setProfileRole]);
 
     return (
       <>
         <div className="playerBar" ref={headerRef}>
           <div className="playerHeader">
-            <div className="playerHeaderTop">
-              <div className="phName">{player}</div>
-              <div className="badge">{pos}</div>
-              <div className="badge">{club}</div>
-              {league && <div className="badge">{league}</div>}
-            </div>
-
-            <div className="phKpis">
-              <div className="phKpi"><div>Age</div><b>{Number.isFinite(age)?tf(age,0):"—"}</b></div>
-              <div className="phKpi"><div>Minutes</div><b>{Number.isFinite(mins)?tf(mins,0):"—"}</b></div>
-              <div className="phKpi"><div>Goals</div><b>{Number.isFinite(goals)?tf(goals,0):"—"}</b></div>
-              <div className="phKpi"><div>Assists</div><b>{Number.isFinite(assists)?tf(assists,0):"—"}</b></div>
-
-              <div className="phKpi"><div>Game Value</div><b>{ Number.isFinite(gameValMid) ? money(gameValMid) : (gameValRaw || "—") }</b></div>
-              <div className="phKpi"><div>True Value</div><b>{money(enhancedTrueValue)}</b></div>
-              <div className="phKpi" style={{fontSize: "10px"}}><div>Best Role</div><b>{bestRole}</b></div>
-              <div className="phKpi"><div>Best Score</div><b>{Number.isFinite(bestScore)?bestScore.toFixed(2):"—"}</b></div>
-              
-              <div className="phKpi" style={{color: contractInfo.multiplier < 0.7 ? "var(--accent2)" : "var(--ink)"}}>
-                <div>Contract</div><b>{contractInfo.status}</b>
+            <div className="playerHeadingMain">
+              <div className="playerHeadingName">{player}</div>
+              <div className="playerHeadingSub">
+                <span>{pos}</span>
+                <span>{club}</span>
+                {league && <span>{league}</span>}
               </div>
-              {contractInfo.multiplier !== 1.0 && (
-                <div className="phKpi" style={{fontSize: "10px", color: "var(--muted)"}}>
-                  <div>Value Impact</div><b>{(contractInfo.multiplier * 100).toFixed(0)}%</b>
-                </div>
-              )}
-
-              <div className="phKpi" ref={wageRef}>
-                <div>Current Wage</div><b>{Number.isFinite(currentW)? money(currentW)+"/wk" : "—"}</b>
-              </div>
-              <div className="phKpi">
-                <div>Fair Wage</div><b>{money(fw)}/wk</b>
-              </div>
-              <div className="phKpi">
-                <div>Max Wage</div><b>{money(mw)}/wk</b>
+              <div className="playerMetaRow">
+                {profilePills.map((pill, idx) => <span key={`pill-${idx}`} className="playerPill">{pill}</span>)}
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Enhanced Value Breakdown Section */}
-        <div className="card" style={{margin: "0 12px 12px 12px"}}>
-          <div className="cardHead">
-            <div style={{fontWeight:800}}>🎯 Enhanced Value Analysis</div>
-            <div className="badge">Advanced Algorithm</div>
-          </div>
-          <div className="cardBody">
-            <ValueBreakdown 
-              playerName={player} 
-              getValueBreakdown={getValueBreakdown} 
-              managedClub={managedClub}
-              rows={rows}
-              filteredRows={filteredRows}
-              pctIndex={pctIndex}
-            />
           </div>
         </div>
 
@@ -3637,18 +3452,26 @@ export default function App(){
           {/* Pizza Chart - Full Width Centered */}
           <div className="card">
             <div className="cardHead" style={{padding: "12px 16px"}}>
-              <div style={{fontWeight:800, fontSize: "16px"}}>Role Pizza — {bestRole}</div>
+              <div style={{display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap"}}>
+                <div style={{fontWeight:800, fontSize: "16px"}}>Role Pizza</div>
+                <select className="input" style={{minWidth:220, maxWidth:360, padding:"8px 10px"}} value={currentProfileRole} onChange={e=>setProfileRole(e.target.value)}>
+                  {roleOptions.map(roleName => {
+                    const s = roleScoreMap.get(roleName);
+                    return <option key={roleName} value={roleName}>{`${roleName}${Number.isFinite(s) ? ` (${s.toFixed(1)})` : ""}`}</option>;
+                  })}
+                </select>
+              </div>
               <div className="badge">vs {compScope}</div>
             </div>
             <div className="cardBody" style={{padding: "16px", display: "flex", flexDirection: "column", alignItems: "center"}}>
               <div style={{fontSize: "12px", color: "var(--muted)", marginBottom: "16px"}}>
-                {player} — {bestRole}
+                {player} — {currentProfileRole}
               </div>
               <div style={{width: "600px", height: "600px"}}>
                 <Pizza 
                   playerName={player}
                   playerData={r}
-                  roleStats={statsBestRole}
+                  roleStats={statsProfileRole}
                   compScope={compScope}
                   pctIndex={pctIndex}
                   customMetricColors={customMetricColorMap}
@@ -3691,16 +3514,33 @@ export default function App(){
 
           {/* Role Matrix - Full Width but Compact */}
           <div className="card">
-            <div className="cardHead" style={{padding: "8px 12px"}}>
-              <div style={{fontWeight:800, fontSize: "14px"}}>Role Matrix — {topRoleA} vs {topRoleB}</div>
-              <div className="badge" style={{fontSize: "10px"}}>Comparison</div>
+            <div className="cardHead" style={{padding: "8px 12px", gap: 8, flexWrap: "wrap"}}>
+              <div style={{fontWeight:800, fontSize: "14px"}}>Role Matrix — {roleMatrixForProfile.rx} vs {roleMatrixForProfile.ry}</div>
+              <div style={{display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap"}}>
+                <select className="input" style={{minWidth: 190, padding: "7px 10px"}} value={matrixRoleA} onChange={e => setProfileMatrixRoleA(e.target.value)}>
+                  {Object.keys(ROLE_BOOK).map(roleName => <option key={roleName} value={roleName}>{roleName}</option>)}
+                </select>
+                <select className="input" style={{minWidth: 190, padding: "7px 10px"}} value={matrixRoleB} onChange={e => setProfileMatrixRoleB(e.target.value)}>
+                  {Object.keys(ROLE_BOOK).map(roleName => <option key={roleName} value={roleName}>{roleName}</option>)}
+                </select>
+                <select className="input" style={{minWidth: 210, padding: "7px 10px"}} value={profileMatrixPool} onChange={e => setProfileMatrixPool(e.target.value)}>
+                  <option value="Positionally Relevant">Positionally Relevant</option>
+                  <option value="All Players">All Players</option>
+                </select>
+              </div>
+              <div className="badge" style={{fontSize: "10px"}}>Sidebar filters first</div>
             </div>
             <div className="cardBody" style={{padding: "12px"}}>
+              <div style={{marginBottom: 8, fontSize: 11, color: "var(--muted)"}}>
+                {profileMatrixPool === "All Players"
+                  ? "Using all players in the sidebar-filtered cohort."
+                  : "Using only players positionally relevant to the selected roles, within the sidebar-filtered cohort."}
+              </div>
               <div style={{width: "100%", height: "750px", overflow: "hidden"}}>
                 <Scatter
-                  points={roleMatrixForTop.pts}
-                  xLabel={`${roleMatrixForTop.rx} score`}
-                  yLabel={`${roleMatrixForTop.ry} score`}
+                  points={roleMatrixForProfile.pts}
+                  xLabel={`${roleMatrixForProfile.rx} score`}
+                  yLabel={`${roleMatrixForProfile.ry} score`}
                   q=""
                   highlightName={player}
                   isProfileMode={true}
@@ -3708,7 +3548,47 @@ export default function App(){
                 />
               </div>
               <div style={{marginTop: "8px", fontSize: "11px", color: "var(--muted)"}}>
-                Highlighted: <strong>{player}</strong> • Roles: <strong>{topRoleA}</strong>{topRoleB ? `, ${topRoleB}` : ""}
+                Highlighted: <strong>{player}</strong> • Roles: <strong>{roleMatrixForProfile.rx}</strong>{roleMatrixForProfile.ry ? `, ${roleMatrixForProfile.ry}` : ""} • Rows: <strong>{roleMatrixForProfile.pts.length}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* All stats by category */}
+          <div className="card">
+            <div className="cardHead" style={{padding: "12px 16px"}}>
+              <div style={{fontWeight:800, fontSize: "16px"}}>All Stats by Category</div>
+              <div className="badge">{Object.keys(r || {}).length} fields</div>
+            </div>
+            <div className="cardBody" ref={allStatsRef} style={{padding:"16px"}}>
+              <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))", gap:"12px"}}>
+                {statCategories.map(category => (
+                  <div key={category} style={{border:"1px solid var(--cardBorder)", borderRadius:"10px", overflow:"hidden", background:"color-mix(in oklab, var(--bg), white 2%)"}}>
+                    <div style={{padding:"8px 10px", fontWeight:700, fontSize:"13px", borderBottom:"1px solid var(--cardBorder)"}}>{category}</div>
+                    <div style={{maxHeight:"280px", overflow:"auto"}}>
+                      <table className="table" style={{margin:0}}>
+                        <tbody>
+                          {statsByCategory[category].map((item, idx) => (
+                            <tr key={`${category}-${item.stat}-${idx}`}>
+                              <td style={{fontSize:"12px"}}>{item.label}</td>
+                              <td
+                                style={{fontSize:"12px", textAlign:"right", whiteSpace:"nowrap", cursor: Number.isFinite(item.percentile) ? "help" : "default"}}
+                                onMouseMove={(e) => {
+                                  if (!Number.isFinite(item.percentile)) return;
+                                  const tip = allStatsRef.current?.__tip;
+                                  if (!tip) return;
+                                  tip.show(e, `<div class="t-title">${item.label}</div><div class="t-row"><span>Value</span><b>${item.value}</b></div><div class="t-row"><span>Percentile</span><b>${tf(item.percentile,1)}%</b></div><div class="t-row"><span>Baseline</span><b>${compScope}</b></div>`);
+                                }}
+                                onMouseLeave={() => allStatsRef.current?.__tip?.hide()}
+                              >
+                                {item.value}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -3763,19 +3643,29 @@ export default function App(){
           <div style={{fontWeight:800, fontSize: "1.1em"}}>Percentiles — {player}</div>
           <div className="badge">vs {compScope}</div>
         </div>
-        <div className="cardBody scroll">
-          <table className="table">
-            <thead><tr><th>Stat</th><th>Value</th><th>Percentile</th></tr></thead>
-            <tbody>
-              {pairs.map((p,i)=>(
-                <tr key={i}>
-                  <td>{LABELS.get(p.stat)||p.stat}</td>
-                  <td>{Number.isFinite(p.raw) ? tf(p.raw,2) : "—"}</td>
-                  <td>{tf(p.pct,2)}%</td>
+        <div className="cardBody">
+          <div className="scroll" style={{maxHeight:540}}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Stat</th>
+                  <th>Raw</th>
+                  <th>Percentile</th>
+                  <th>Band</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {pairs.map(pair => (
+                  <tr key={pair.stat}>
+                    <td>{LABELS.get(pair.stat) || pair.stat}</td>
+                    <td>{Number.isFinite(pair.raw) ? tf(pair.raw, 2) : "—"}</td>
+                    <td>{tf(pair.pct, 1)}%</td>
+                    <td>{decileBadge(pair.pct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
@@ -3786,7 +3676,7 @@ export default function App(){
       <div className="card">
         <div className="cardHead" style={{gap:12}}>
           <div style={{fontWeight:800, fontSize: "1.1em"}}>Role Matrix — {roleX} vs {roleY}</div>
-          <div style={{display:"flex", gap:8, alignItems:"center"}}>
+          <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
             <select className="input" style={{minWidth:200}} value={roleX} onChange={e=>setRoleX(e.target.value)}>
               {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
             </select>
@@ -3853,68 +3743,9 @@ export default function App(){
             </div>
           </div>
 
-          <div style={{border:"1px solid var(--cardBorder)", borderRadius:12, padding:12}}>
-            <div className="row" style={{alignItems:"center", marginBottom:8}}>
-              <div style={{fontWeight:700}}>Custom Metrics</div>
-              <div style={{marginLeft:"auto", display:"flex", gap:8, alignItems:"center"}}>
-                <button className="btn ghost tight" onClick={exportCustomMetrics}>Export JSON</button>
-                <label className="btn ghost tight" style={{cursor:"pointer"}}>
-                  Import JSON
-                  <input type="file" accept=".json" onChange={importCustomMetrics} style={{display:"none"}} />
-                </label>
-              </div>
-            </div>
-
-            <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
-              <div className="col" style={{minWidth:180}}>
-                <label className="lbl">Name</label>
-                <input className="input" value={cmName} onChange={e=>setCmName(e.target.value)} placeholder="e.g. Aggression Balance" />
-              </div>
-              <div className="col" style={{minWidth:180}}>
-                <label className="lbl">Metric A</label>
-                <select className="input" value={cmMetricA} onChange={e=>setCmMetricA(e.target.value)}>
-                  {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
-                </select>
-              </div>
-              <div style={{width:150}}>
-                <label className="lbl">Operation</label>
-                <select className="input" value={cmOperation} onChange={e=>setCmOperation(e.target.value)}>
-                  {CUSTOM_METRIC_OPERATIONS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
-                </select>
-              </div>
-              <div className="col" style={{minWidth:180}}>
-                <label className="lbl">Metric B</label>
-                <select className="input" value={cmMetricB} onChange={e=>setCmMetricB(e.target.value)}>
-                  {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
-                </select>
-              </div>
-              <div style={{width:120}}>
-                <label className="lbl">Color</label>
-                <input className="input" type="color" value={cmColor} onChange={e=>setCmColor(e.target.value)} />
-              </div>
-              <button className="btn" onClick={addCustomMetric}>Add Metric</button>
-            </div>
-
-            {customMetrics.length ? (
-              <div style={{marginTop:10, display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))", gap:8}}>
-                {customMetrics.map(m => (
-                  <div key={m.id || m.name} style={{display:"flex", alignItems:"center", gap:8, border:"1px solid var(--cardBorder)", borderRadius:8, padding:"8px 10px"}}>
-                    <div style={{width:12, height:12, borderRadius:3, background:m.color, border:"1px solid rgba(0,0,0,0.25)"}} />
-                    <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{m.name}</div>
-                      <div style={{fontSize:11, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{renderFormula(m)}</div>
-                    </div>
-                    <button className="btn ghost alt tight" onClick={()=>removeCustomMetric(m.name)}>Remove</button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="status" style={{marginTop:8}}>No custom metrics yet. Add one with two metrics and an operation.</div>
-            )}
-          </div>
-
-          <div style={{fontSize:12, color:"var(--muted)"}}>
-            Custom metrics are available in Stat Scatter selectors and can be imported/exported as JSON.
+          <div className="row" style={{gap:8, alignItems:"center", justifyContent:"space-between", flexWrap:"wrap"}}>
+            <div style={{fontSize:12, color:"var(--muted)"}}>Custom metrics now live in their own mode.</div>
+            <button className="btn ghost tight" onClick={() => setMode("Custom Metrics")}>Open Custom Metrics</button>
           </div>
 
           <Scatter
@@ -3931,19 +3762,106 @@ export default function App(){
     );
   }
 
+  function CustomMetricsMode(){
+    const renderFormula = (m) => {
+      if (m.operation === "average") return `avg(${m.metricA}, ${m.metricB})`;
+      return `${m.metricA} ${CUSTOM_METRIC_SYMBOL[m.operation] || "?"} ${m.metricB}`;
+    };
+
+    return (
+      <div className="card">
+        <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
+          <div style={{fontWeight:800, fontSize: "1.1em"}}>Custom Metrics</div>
+          <div className="badge">{customMetrics.length} defined</div>
+          <div style={{marginLeft:"auto", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+            <button className="btn ghost tight" onClick={exportCustomMetrics}>Export JSON</button>
+            <label className="btn ghost tight" style={{cursor:"pointer"}}>
+              Import JSON
+              <input type="file" accept=".json" onChange={importCustomMetrics} style={{display:"none"}} />
+            </label>
+          </div>
+        </div>
+        <div className="cardBody" style={{display:"flex", flexDirection:"column", gap:12}}>
+          <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+            <div className="col" style={{minWidth:180}}>
+              <label className="lbl">Name</label>
+              <input className="input" value={cmName} onChange={e=>setCmName(e.target.value)} placeholder="e.g. Aggression Balance" />
+            </div>
+            <div className="col" style={{minWidth:180}}>
+              <label className="lbl">Metric A</label>
+              <select className="input" value={cmMetricA} onChange={e=>setCmMetricA(e.target.value)}>
+                {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+              </select>
+            </div>
+            <div style={{width:150}}>
+              <label className="lbl">Operation</label>
+              <select className="input" value={cmOperation} onChange={e=>setCmOperation(e.target.value)}>
+                {CUSTOM_METRIC_OPERATIONS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
+              </select>
+            </div>
+            <div className="col" style={{minWidth:180}}>
+              <label className="lbl">Metric B</label>
+              <select className="input" value={cmMetricB} onChange={e=>setCmMetricB(e.target.value)}>
+                {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+              </select>
+            </div>
+            <div style={{width:120}}>
+              <label className="lbl">Color</label>
+              <input className="input" type="color" value={cmColor} onChange={e=>setCmColor(e.target.value)} />
+            </div>
+            <button className="btn" onClick={addCustomMetric}>Add Metric</button>
+          </div>
+
+          {customMetrics.length ? (
+            <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))", gap:8}}>
+              {customMetrics.map(m => (
+                <div key={m.id || m.name} style={{display:"flex", alignItems:"center", gap:8, border:"1px solid var(--cardBorder)", borderRadius:8, padding:"8px 10px"}}>
+                  <div style={{width:12, height:12, borderRadius:3, background:m.color, border:"1px solid rgba(0,0,0,0.25)"}} />
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{m.name}</div>
+                    <div style={{fontSize:11, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{renderFormula(m)}</div>
+                  </div>
+                  <button className="btn ghost alt tight" onClick={()=>removeCustomMetric(m.name)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="status">No custom metrics yet. Add one with two metrics and an operation.</div>
+          )}
+
+          <div style={{fontSize:12, color:"var(--muted)"}}>
+            Custom metrics are used by Stat Scatter and other metric pickers, and can be imported/exported as JSON.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ---------- Leaders / Best Roles / Stat Leaders ---------- */
   function roleLeadersData(roleName, limit=30){
     // Get relevant positions for this role
     const rolePositions = ROLE_BOOK[roleName]?.baseline || [];
     const relevantPositions = new Set(rolePositions);
+    const isStrikerRole = typeof roleName === "string" && roleName.startsWith("ST —");
     
     const arr = filteredRows
-      .map(r => ({ name:r["Name"], club: r["Club"], pos: (expandFMPositions(r["Pos"])[0]||""), score: roleScoreOfRow(r, roleName) }))
+      .map(r => {
+        const positions = expandFMPositions(r["Pos"]);
+        return {
+          name:r["Name"],
+          club: r["Club"],
+          pos: primaryFMPosition(r["Pos"]) || (positions[0]||""),
+          posRaw: r["Pos"],
+          positions,
+          score: roleScoreOfRow(r, roleName)
+        };
+      })
       .filter(x => {
         if (!Number.isFinite(x.score)) return false;
         // Only include players whose positions are relevant for this role
-        const playerPositions = expandFMPositions(filteredRows.find(row => row["Name"] === x.name)?.["Pos"] || "");
-        return playerPositions.some(pos => relevantPositions.has(pos));
+        if (!x.positions.some(pos => relevantPositions.has(pos))) return false;
+        if (isStrikerRole && !isPrimaryStrikerPosition(x.posRaw)) return false;
+        return true;
       })
       .sort((a,b)=>b.score-a.score)
       .slice(0, limit);
@@ -3990,7 +3908,7 @@ export default function App(){
     const playerRoles = Object.keys(ROLE_BOOK).map(roleName => {
       const baseline = ROLE_BASELINES[roleName] || [];
       if (!sharesAny(expandFMPositions(getCell(r,"Pos")), baseline)) return null;
-      return { roleName, score: roleScoreFor(r, roleName, pctIndex) || 0 };
+      return { roleName, score: roleScoreFor(r, roleName, roleScorePctIndex, roleScorePctByRole) || 0 };
     }).filter(Boolean).sort((a,b)=>b.score-a.score).slice(0, 10);
     
     const items = playerRoles.map(x => ({ 
@@ -4192,8 +4110,8 @@ export default function App(){
     // Get club context with caching
     const clubContext = useMemo(() => {
       if (!managedClub) return null;
-      return analyzeClubContext(managedClub, filteredRows, pctIndex);
-    }, [managedClub, filteredRows, pctIndex]);
+      return analyzeClubContext(managedClub, filteredRows, roleScorePctIndex, roleScorePctByRole);
+    }, [managedClub, filteredRows, roleScorePctIndex, roleScorePctByRole]);
     if (!clubContext) {
       return (
         <div className="card">
@@ -4304,6 +4222,10 @@ export default function App(){
       const getLeagueTier = (league) => {
         if (!league) return 6;
         const l = league.toLowerCase();
+        const isSpanishSecondTier = /\bla\s*liga\s*(2|hypermotion)\b|\blaliga\s*(2|hypermotion)\b|laliga smartbank|liga smartbank|segunda\s+divisi[oó]n/.test(l);
+        const isSpanishTopTier = /(\bla\s*liga\b|\blaliga\b|primera\s+divisi[oó]n)/.test(l) && !isSpanishSecondTier;
+        const isGermanSecondTier = /\b2\.?\s*bundesliga\b|\bbundesliga\s*2\b/.test(l);
+        const isGermanTopTier = l.includes('bundesliga') && !isGermanSecondTier;
         
         // English system (most expensive in world)
         if (l.includes('premier league')) return 1; // Top tier
@@ -4314,8 +4236,8 @@ export default function App(){
         if (l.includes('national league north') || l.includes('national league south')) return 6; // Sixth tier
         
         // Other top leagues (slightly less expensive than Premier League)
-        if (l.includes('la liga') || l.includes('serie a') || l.includes('bundesliga') || l.includes('ligue 1')) return 1;
-        if (l.includes('liga 2') || l.includes('serie b') || l.includes('2. bundesliga') || l.includes('ligue 2')) return 2;
+        if (isSpanishSecondTier || isGermanSecondTier || l.includes('liga 2') || l.includes('serie b') || l.includes('ligue 2')) return 2;
+        if (isSpanishTopTier || isGermanTopTier || l.includes('serie a') || l.includes('ligue 1')) return 1;
         if (l.includes('3. liga')) return 3;
         
         return 6; // Lower tiers
@@ -4398,7 +4320,7 @@ export default function App(){
           return false;
         }
         
-        const { score: bestScore } = bestNearRole(player, pctIndex);
+        const { score: bestScore } = bestNearRole(player, roleScorePctIndex, roleScorePctByRole);
         // Be more lenient with rating filter - allow 15 points below minimum
         if (bestScore < (transferMinRating - 15)) {
           filterStats.rating++;
@@ -4433,7 +4355,7 @@ export default function App(){
       
       preFilteredPlayers.forEach(player => {
         processedCount++;
-        const { role: bestRole, score: bestScore } = bestNearRole(player, pctIndex);
+        const { role: bestRole, score: bestScore } = bestNearRole(player, roleScorePctIndex, roleScorePctByRole);
         
         // Cache expensive calls
         const playerClub = getCell(player, "Club");
@@ -4475,7 +4397,7 @@ export default function App(){
             continue;
           }
           
-          const roleScore = roleScoreFor(player, targetRole, pctIndex) || 0;
+          const roleScore = roleScoreFor(player, targetRole, roleScorePctIndex, roleScorePctByRole) || 0;
           if (roleScore < transferMinRating) continue;
           
           const currentRoleData = clubContext.roleAnalysis[targetRole];
@@ -4548,22 +4470,26 @@ export default function App(){
             
             // Enhanced realism check with granular club performance levels
             const getClubPerformanceLevel = () => {
-              const leagueGroup = clubContext.leagueGroup?.toLowerCase() || '';
+              const leagueName = String(clubContext.league || '').toLowerCase();
+              const isLaLigaSecondTier = /\bla\s*liga\s*(2|hypermotion)\b|\blaliga\s*(2|hypermotion)\b|laliga smartbank|liga smartbank|segunda\s+divisi[oó]n/.test(leagueName);
+              const isLaLigaTopTier = /(\bla\s*liga\b|\blaliga\b|primera\s+divisi[oó]n)/.test(leagueName) && !isLaLigaSecondTier;
+              const isBundesligaSecondTier = /\b2\.?\s*bundesliga\b|\bbundesliga\s*2\b/.test(leagueName);
+              const isBundesligaTopTier = leagueName.includes('bundesliga') && !isBundesligaSecondTier;
               const avgRating = clubContext.avgSquadScore || 60;
               
               // Elite clubs (Champions League level)
-              if (leagueGroup.includes('premier league') && avgRating >= 75) return 'elite';
-              if (leagueGroup.includes('la liga') && avgRating >= 75) return 'elite';
-              if (leagueGroup.includes('bundesliga') && avgRating >= 75) return 'elite';
-              if (leagueGroup.includes('serie a') && avgRating >= 75) return 'elite';
-              if (leagueGroup.includes('ligue 1') && avgRating >= 75) return 'elite';
+              if (leagueName.includes('premier league') && avgRating >= 75) return 'elite';
+              if (isLaLigaTopTier && avgRating >= 75) return 'elite';
+              if (isBundesligaTopTier && avgRating >= 75) return 'elite';
+              if (leagueName.includes('serie a') && avgRating >= 75) return 'elite';
+              if (leagueName.includes('ligue 1') && avgRating >= 75) return 'elite';
               
               // Top club (Europa League level)
-              if (leagueGroup.includes('premier league') && avgRating >= 70) return 'top';
-              if (leagueGroup.includes('la liga') && avgRating >= 70) return 'top';
-              if (leagueGroup.includes('bundesliga') && avgRating >= 70) return 'top';
-              if (leagueGroup.includes('serie a') && avgRating >= 70) return 'top';
-              if (leagueGroup.includes('ligue 1') && avgRating >= 70) return 'top';
+              if (leagueName.includes('premier league') && avgRating >= 70) return 'top';
+              if (isLaLigaTopTier && avgRating >= 70) return 'top';
+              if (isBundesligaTopTier && avgRating >= 70) return 'top';
+              if (leagueName.includes('serie a') && avgRating >= 70) return 'top';
+              if (leagueName.includes('ligue 1') && avgRating >= 70) return 'top';
               
               // Mid-table in top leagues or strong in lower leagues
               if (clubLeagueTier <= 1 && avgRating >= 65) return 'decent';
@@ -4604,10 +4530,15 @@ export default function App(){
                 playerClub.includes('Monaco') || playerClub.includes('Lyon')
               );
               
+              const leagueLower = String(league || '').toLowerCase();
+              const isSpanishSecondTier = /\bla\s*liga\s*(2|hypermotion)\b|\blaliga\s*(2|hypermotion)\b|laliga smartbank|liga smartbank|segunda\s+divisi[oó]n/.test(leagueLower);
+              const isSpanishTopTier = /(\bla\s*liga\b|\blaliga\b|primera\s+divisi[oó]n)/.test(leagueLower) && !isSpanishSecondTier;
+              const isBundesligaSecondTier = /\b2\.?\s*bundesliga\b|\bbundesliga\s*2\b/.test(leagueLower);
+              const isBundesligaTopTier = leagueLower.includes('bundesliga') && !isBundesligaSecondTier;
               const isTopLeague = league && (
-                league.includes('Premier League') || league.includes('La Liga') ||
-                league.includes('Bundesliga') || league.includes('Serie A') ||
-                league.includes('Ligue 1')
+                leagueLower.includes('premier league') || isSpanishTopTier ||
+                isBundesligaTopTier || leagueLower.includes('serie a') ||
+                leagueLower.includes('ligue 1')
               );
               
               // Enhanced realism based on real-world transfer data and club performance
@@ -4680,7 +4611,7 @@ export default function App(){
             candidatesPerRole[bestTargetRole]++;
             
             if (processedCount <= 10) {
-              console.log(`  ✅ ADDED CANDIDATE: ${playerName} for ${bestTargetRole} (${bestImprovement.toFixed(1)} improvement, ${valueInM}M)`);
+              console.log(`  ADDED CANDIDATE: ${playerName} for ${bestTargetRole} (${bestImprovement.toFixed(1)} improvement, ${valueInM}M)`);
             }
           } else {
             skippedReasons.overBudget++;
@@ -4893,7 +4824,7 @@ export default function App(){
                   style={{fontSize: '11px'}}
                   disabled={transferSearching}
                 >
-                  {transferSearching ? '⏳ Searching...' : transferSearchActive ? '🔄 Search Again' : '🔍 Search Targets'}
+                  {transferSearching ? 'Searching...' : transferSearchActive ? 'Search Again' : 'Search Targets'}
                 </button>
                 {transferSearchActive && (
                   <button 
@@ -4903,7 +4834,7 @@ export default function App(){
                     }}
                     style={{fontSize: '11px'}}
                   >
-                    ❌ Clear
+                    Clear
                   </button>
                 )}
               </div>  
@@ -4948,7 +4879,7 @@ export default function App(){
                 <div key={role.role} style={{
                   padding: '6px 8px',
                   borderRadius: '3px',
-                  backgroundColor: 'var(--cardBg)',
+                  backgroundColor: 'var(--card)',
                   border: '1px solid var(--cardBorder)'
                 }}>
                   <div style={{fontWeight: 'bold', fontSize: '10px'}}>{role.role}</div>
@@ -4980,7 +4911,7 @@ export default function App(){
             {!transferSearchActive ? (
               <div style={{textAlign: 'center', padding: '24px', color: 'var(--muted)'}}>
                 <div style={{marginBottom: '12px', fontSize: '16px'}}>
-                  🔍 Ready to Search
+                  Ready to Search
                 </div>
                 <div style={{marginBottom: '8px'}}>
                   Click "Search Targets" to find transfer recommendations within your criteria.
@@ -5058,7 +4989,7 @@ export default function App(){
                         </td>
                         <td style={{color: target.isOverBudget ? 'var(--accent2)' : 'inherit'}}>
                           {formatMoney(target.value)}
-                          {target.isOverBudget && <span style={{fontSize: '10px', marginLeft: '4px'}}>⚠️</span>}
+                          {target.isOverBudget && <span style={{fontSize: '10px', marginLeft: '4px'}}>Over budget</span>}
                           {target.isRecordTransfer && (
                             <div style={{fontSize: '8px', color: 'var(--accent)', marginTop: '2px'}}>
                               Record transfer
@@ -5079,14 +5010,14 @@ export default function App(){
                               style={{color: 'var(--accent)', fontSize: '14px'}} 
                               title={`Realistic transfer. Max for their tier: £${target.marketReality?.playerTierMax}M, Your affordability: £${target.marketReality?.clubAffordability}M`}
                             >
-                              ✅
+                              Yes
                             </span>
                           ) : (
                             <span 
                               style={{color: 'var(--accent2)', fontSize: '14px'}} 
                               title={`May be unrealistic. Fee: £${target.value}M vs tier max £${target.marketReality?.playerTierMax}M or club limit £${target.marketReality?.clubAffordability}M`}
                             >
-                              ⚠️
+                              Caution
                             </span>
                           )}
                         </td>
@@ -5162,6 +5093,15 @@ export default function App(){
                   {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
 
+                <label className="lbl">Role Selection Behavior</label>
+                <select className="input" value={roleSelectionMode} onChange={e=>setRoleSelectionMode(e.target.value)}>
+                  <option value="Persist">Persist</option>
+                  <option value="Auto Switch">Auto Switch on Player Change</option>
+                </select>
+                <div className="status" style={{marginBottom: 10}}>
+                  Auto Switch updates Profile Pizza to best role and Stat Scatter role axes to the selected player's top two roles.
+                </div>
+
                 <label className="lbl">Matrix roles</label>
                 <select className="input" value={roleX} onChange={e=>setRoleX(e.target.value)}>
                   {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
@@ -5186,67 +5126,15 @@ export default function App(){
               </div>
 
               <div className="col">
-                <h3 style={{margin:"0 0 16px 0", color:"var(--accent)"}}>Value Model Configuration</h3>
-                
-                <div className="row">
-                  <div className="col">
-                    <label className="lbl">Buy Discount (0–1)</label>
-                    <input className="input" type="number" step="0.01" min="0" max="1"
-                      value={safeValueCfg.buyDiscount}
-                      onChange={e => setValueCfg({...valueCfg, buyDiscount: Math.max(0, Math.min(1, Number(e.target.value)||0.95))})}/>
-                  </div>
-                </div>
-
-                <div className="row">
-                  <div className="col">
-                    <label className="lbl">Score Power (dampen)</label>
-                    <input className="input" type="number" step="0.05" min="0.5" max="2"
-                      value={safeValueCfg.scorePower}
-                      onChange={e => setValueCfg({...valueCfg, scorePower: Number(e.target.value)||1.00})}/>
-                  </div>
-                  <div className="col">
-                    <label className="lbl">Min Minutes Ref</label>
-                    <input className="input" type="number" step="60"
-                      value={safeValueCfg.minMinutesRef}
-                      onChange={e => setValueCfg({...valueCfg, minMinutesRef: Math.max(60, Number(e.target.value)||1800)})}/>
-                  </div>
-                </div>
-
-                <label className="lbl">League Weights</label>
-                <div className="row">
-                  {["elite","strong","solid","growth","develop"].map(k=>(
-                    <div className="col" key={k}>
-                      <div className="lbl" style={{marginBottom:6}}>{k}</div>
-                      <input className="input" type="number" step="0.05" min="0.2" max="1.6"
-                        value={safeValueCfg.leagueWeights[k]}
-                        onChange={e => setValueCfg({
-                          ...valueCfg,
-                          leagueWeights: { ...(valueCfg.leagueWeights||{}), [k]: Number(e.target.value)||safeValueCfg.leagueWeights[k] }
-                        })}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <label className="lbl" style={{marginTop:8}}>Wage Settings</label>
-                <div className="row">
-                  <div className="col">
-                    <div className="lbl">£/wk per £1m TV</div>
-                    <input className="input" type="number" step="50" min="1000" max="10000"
-                      value={safeValueCfg.wagePerM}
-                      onChange={e=>setValueCfg({...valueCfg, wagePerM: Number(e.target.value)||safeValueCfg.wagePerM})}/>
-                  </div>
-                  <div className="col">
-                    <div className="lbl">Max Wage Mult</div>
-                    <input className="input" type="number" step="0.01" min="1" max="2"
-                      value={safeValueCfg.wageMaxMult}
-                      onChange={e=>setValueCfg({...valueCfg, wageMaxMult: Math.max(1, Number(e.target.value)||safeValueCfg.wageMaxMult)})}/>
-                  </div>
+                <h3 style={{margin:"0 0 16px 0", color:"var(--accent)"}}>Analysis Settings</h3>
+                <div style={{padding:12, border:"1px solid var(--cardBorder)", borderRadius:8, color:"var(--muted)", fontSize:13}}>
+                  Market price and wage prediction controls have been removed.
+                  This app now focuses on role/league comparison and observed data only.
                 </div>
               </div>
             </div>
             
-            <div style={{marginTop:24, padding:16, background:"var(--cardBg)", borderRadius:8, border:"1px solid var(--cardBorder)"}}>
+            <div style={{marginTop:24, padding:16, background:"var(--card)", borderRadius:8, border:"1px solid var(--cardBorder)"}}>
               <div style={{fontSize:14, color:"var(--muted)"}}>
                 Configuration changes are applied immediately. Use the sidebar for quick filters and player selection, 
                 then return to other modes to see your data visualizations.
@@ -5258,172 +5146,358 @@ export default function App(){
     );
   }
 
-  /* ---------- Player Finder (no results until Apply) ---------- */
-  function PlayerFinderMode(){
-    const [pfRole, setPfRole] = useStickyState("pf:role", role);
-    const [pfMinScore, setPfMinScore] = useStickyState("pf:minScore", 70);
-    const [pfUseStat, setPfUseStat] = useStickyState("pf:useStat", statX || metricBuilderOptions[0] || allStats[0] || "");
-    const [pfMinStat, setPfMinStat] = useStickyState("pf:minStat", 0);
-    const [pfUnderratedOnly, setPfUnderratedOnly] = useStickyState("pf:underratedOnly", false);
-    const [pfUnderratedMargin, setPfUnderratedMargin] = useStickyState("pf:underratedMargin", 0.15);
+  /* ---------- Player Database ---------- */
+  function PlayerDatabaseMode(){
+    const MAX_DB_STATS = 15;
+    const [dbCardStatPicker, setDbCardStatPicker] = useStickyState("db:cardStatPicker", "");
+    const [dbFilterStatPicker, setDbFilterStatPicker] = useStickyState("db:filterStatPicker", "");
+    const [dbSelectedStats, setDbSelectedStats] = useStickyState("db:selectedStats", []);
+    const [dbSearchInput, setDbSearchInput] = useStickyState("db:searchInput", "");
+    const [dbAppliedQuery, setDbAppliedQuery] = useStickyState("db:appliedQuery", "");
+    const [dbClubFilter, setDbClubFilter] = useStickyState("db:clubFilter", "");
+    const [dbStatFilters, setDbStatFilters] = useStickyState("db:statFilters", []);
+    const [dbStatFilterLogic, setDbStatFilterLogic] = useStickyState("db:statFilterLogic", "AND");
+    const [dbStatFilterMode, setDbStatFilterMode] = useStickyState("db:statFilterMode", "raw");
+
+    const dbClubOptions = useMemo(() => {
+      const clubs = filteredRows.map(r => getCell(r, "Club")).filter(Boolean);
+      return Array.from(new Set(clubs)).sort((a, b) => String(a).localeCompare(String(b)));
+    }, [filteredRows]);
+
+    const dbPctIndex = useMemo(() => buildPercentileIndex(filteredRows, percentileStats), [filteredRows, percentileStats]);
 
     useEffect(() => {
       if (!metricBuilderOptions.length) return;
-      if (!metricBuilderOptions.includes(pfUseStat)) setPfUseStat(metricBuilderOptions[0]);
-    }, [metricBuilderOptions, pfUseStat, setPfUseStat]);
-
-    // If user hasn't applied search/filters, show prompt (and avoid heavy computation)
-    if (!searchApplied) {
-      return (
-        <div className="card">
-          <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
-            <div style={{fontWeight:800}}>Player Finder</div>
-          </div>
-          <div className="cardBody">
-            <div style={{padding:24, textAlign:"center"}}>
-              <div style={{fontSize:16, fontWeight:700, marginBottom:8}}>No results yet</div>
-              <div className="status" style={{marginBottom:12}}>Adjust your filters (role / thresholds) and apply a search to run the finder.</div>
-              <div style={{display:"flex", justifyContent:"center", gap:8}}>
-                <button className="btn ghost tight" onClick={clearSearch}>Clear</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // computed rows (only when searchApplied)
-    const rowsPF = useMemo(() => {
-      return filteredRows.map(r => {
-        const name = r["Name"];
-        const br = bestRoleCache.get(name) || { role:null, score:0 };
-        const rk = bestRoleRank(name);
-        const tv = trueValue(name);
-        const ba = buyAt(name);
-        const fw = fairWage(name);
-        const mw = maxWage(name);
-        const currW = wageWeeklyOf(r);
-        const gameMid = parseMoneyRange(getCell(r,"Transfer Value")||"").mid;
-        const scoreInRole = roleScoreOfRow(r, pfRole);
-        const statVal = metricValue(r, pfUseStat);
-        const undervalued = Number.isFinite(gameMid) ? (tv > gameMid * (1 + pfUnderratedMargin)) : false;
-
-        return {
-          name, club: r["Club"], pos: r["Pos"], mins: numerify(r["Minutes"]),
-          age: numerify(r["Age"]), bestRole: br.role, bestScore: br.score,
-          scoreInRole, statVal, rankText: (Number.isFinite(rk.rank)? `#${rk.rank}/${rk.of}` : "—"),
-          tv, ba, fw, mw, currW, gameMid, undervalued
-        };
+      if (!metricBuilderOptions.includes(dbCardStatPicker)) {
+        setDbCardStatPicker(metricBuilderOptions[0]);
+      }
+      if (!metricBuilderOptions.includes(dbFilterStatPicker)) {
+        setDbFilterStatPicker(metricBuilderOptions[0]);
+      }
+      setDbSelectedStats(prev => {
+        const prevList = Array.isArray(prev) ? prev : [];
+        const trimmed = prevList
+          .filter(stat => metricBuilderOptions.includes(stat))
+          .slice(0, MAX_DB_STATS);
+        const unchanged =
+          trimmed.length === prevList.length &&
+          trimmed.every((stat, idx) => stat === prevList[idx]);
+        if (unchanged && trimmed.length > 0) return prevList;
+        if (trimmed.length > 0) return trimmed;
+        const defaults = ["Goals", "Assist", "xG/90", "xA/90", "Avg Rating", "Minutes"]
+          .filter(stat => metricBuilderOptions.includes(stat));
+        const fallback = defaults.length
+          ? defaults
+          : metricBuilderOptions.slice(0, Math.min(6, metricBuilderOptions.length));
+        return fallback.slice(0, MAX_DB_STATS);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filteredRows, bestRoleCache, pfRole, pfUseStat, pfUnderratedMargin, trueValue, buyAt, fairWage, maxWage, roleScoreOfRow, wageWeeklyOf, metricValue]);
+    }, [metricBuilderOptions, dbCardStatPicker, dbFilterStatPicker, setDbSelectedStats, setDbCardStatPicker, setDbFilterStatPicker]);
 
-    const rowsFiltered = useMemo(() => {
-      return rowsPF.filter(p => {
-        const scoreOk = !Number.isFinite(pfMinScore) ? true : (Number.isFinite(p.scoreInRole) ? p.scoreInRole >= pfMinScore : false);
-        const statOk  = !Number.isFinite(pfMinStat)  ? true : (Number.isFinite(p.statVal)  ? p.statVal >= pfMinStat  : false);
-        const uvOk = pfUnderratedOnly ? (p.undervalued && Number.isFinite(p.gameMid)) : true;
-        return scoreOk && statOk && uvOk;
-      }).sort((a,b)=>{
-        if (pfUnderratedOnly) {
-          const aDelta = Number.isFinite(a.gameMid)? (a.tv - a.gameMid) : -Infinity;
-          const bDelta = Number.isFinite(b.gameMid)? (b.tv - b.gameMid) : -Infinity;
-          return bDelta - aDelta;
-        }
-        return (b.scoreInRole - a.scoreInRole) || (b.bestScore - a.bestScore);
+    useEffect(() => {
+      if (!dbClubFilter) return;
+      if (!dbClubOptions.includes(dbClubFilter)) setDbClubFilter("");
+    }, [dbClubFilter, dbClubOptions, setDbClubFilter]);
+
+    const addDbStatFilter = useCallback(() => {
+      const fallbackStat = metricBuilderOptions.includes("Goals")
+        ? "Goals"
+        : (metricBuilderOptions[0] || "");
+      setDbStatFilters(prev => {
+        const base = Array.isArray(prev) ? prev : [];
+        return [...base, { stat: dbFilterStatPicker || fallbackStat, op: ">=", value: "" }];
       });
-    }, [rowsPF, pfMinScore, pfMinStat, pfUnderratedOnly]);
+    }, [metricBuilderOptions, dbFilterStatPicker, setDbStatFilters]);
+
+    const updateDbStatFilter = useCallback((idx, patch) => {
+      setDbStatFilters(prev => {
+        const base = Array.isArray(prev) ? [...prev] : [];
+        if (!base[idx]) return base;
+        base[idx] = { ...base[idx], ...patch };
+        return base;
+      });
+    }, [setDbStatFilters]);
+
+    const removeDbStatFilter = useCallback((idx) => {
+      setDbStatFilters(prev => {
+        const base = Array.isArray(prev) ? prev : [];
+        return base.filter((_, i) => i !== idx);
+      });
+    }, [setDbStatFilters]);
+
+    const clearDbStatFilters = useCallback(() => {
+      setDbStatFilters([]);
+    }, [setDbStatFilters]);
+
+    const activeDbStatFilters = useMemo(() => {
+      return (Array.isArray(dbStatFilters) ? dbStatFilters : [])
+        .map(f => ({
+          stat: String(f?.stat || ""),
+          op: String(f?.op || ">="),
+          value: String(f?.value ?? "").trim()
+        }))
+        .filter(f => f.stat && f.value !== "" && Number.isFinite(Number(f.value)));
+    }, [dbStatFilters]);
+
+    const selectedStats = Array.isArray(dbSelectedStats)
+      ? dbSelectedStats.slice(0, MAX_DB_STATS)
+      : [];
+    const selectedStatSet = useMemo(() => new Set(selectedStats), [selectedStats]);
+
+    const addSelectedStat = () => {
+      if (!dbCardStatPicker || selectedStatSet.has(dbCardStatPicker) || selectedStats.length >= MAX_DB_STATS) return;
+      setDbSelectedStats([...selectedStats, dbCardStatPicker]);
+    };
+
+    const removeSelectedStat = (statName) => {
+      setDbSelectedStats(selectedStats.filter(stat => stat !== statName));
+    };
+
+    const resetSelectedStats = () => {
+      const defaults = ["Goals", "Assist", "xG/90", "xA/90", "Avg Rating", "Minutes"]
+        .filter(stat => metricBuilderOptions.includes(stat))
+        .slice(0, MAX_DB_STATS);
+      if (defaults.length) {
+        setDbSelectedStats(defaults);
+      } else {
+        setDbSelectedStats(metricBuilderOptions.slice(0, Math.min(6, metricBuilderOptions.length, MAX_DB_STATS)));
+      }
+    };
+
+    const submitDbSearch = (evt) => {
+      evt.preventDefault();
+      setDbAppliedQuery(strip(dbSearchInput));
+    };
+
+    const clearDbSearch = () => {
+      setDbSearchInput("");
+      setDbAppliedQuery("");
+      setDbClubFilter("");
+    };
+
+    const dbResults = useMemo(() => {
+      const q = normalizePlayerName(strip(dbAppliedQuery)).toLowerCase();
+      const narrowed = filteredRows.filter(r => {
+        const club = String(getCell(r, "Club") || "");
+        if (dbClubFilter && club !== dbClubFilter) return false;
+        if (!q) return true;
+        const name = normalizePlayerName(String(getCell(r, "Name") || "")).toLowerCase();
+        const pos = String(getCell(r, "Pos") || "").toLowerCase();
+        const nation = String(getCell(r, "Nat") || "").toLowerCase();
+        const clubNorm = normalizePlayerName(club).toLowerCase();
+        return name.includes(q) || clubNorm.includes(q) || pos.includes(q) || nation.includes(q);
+      });
+      return evaluateStatFilterGroup(narrowed, activeDbStatFilters, {
+        logic: dbStatFilterLogic,
+        valueMode: dbStatFilterMode,
+        percentileIndex: dbPctIndex,
+        metricResolver: (row, statName) => metricValue(row, statName)
+      })
+        .sort((a, b) => String(getCell(a, "Name") || "").localeCompare(String(getCell(b, "Name") || "")));
+    }, [filteredRows, dbAppliedQuery, dbClubFilter, activeDbStatFilters, dbStatFilterLogic, dbStatFilterMode, dbPctIndex, metricValue]);
+
+    const formatDbStatValue = (row, statName, mode = dbStatFilterMode) => {
+      if (mode === "percentile") {
+        const metric = metricValue(row, statName);
+        const pct = percentileFor(dbPctIndex, statName, metric);
+        return Number.isFinite(pct) ? `${tf(pct, 1)}%` : "—";
+      }
+
+      const raw = getCell(row, statName);
+      const n = numerify(raw);
+      if (!Number.isFinite(n)) {
+        const text = strip(raw);
+        return text || "—";
+      }
+
+      const norm = keyNorm(statName);
+      if (
+        norm === "age" ||
+        norm.includes("minute") ||
+        norm === "goals" ||
+        norm === "assist" ||
+        norm.includes("card") ||
+        norm.includes("appearance")
+      ) {
+        return tf(n, 0);
+      }
+      return tf(n, 2);
+    };
 
     return (
-      <div className="card">
-        <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
-          <div style={{fontWeight:800}}>Player Finder</div>
-          <div className="row" style={{gap:8, flexWrap:"wrap"}}>
-            <div style={{width:220}}>
-              <label className="lbl">Filter by role score</label>
-              <select className="input" value={pfRole} onChange={e=>setPfRole(e.target.value)}>
-                {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
-              </select>
-            </div>
-            <div style={{width:160}}>
-              <label className="lbl">Min role score</label>
-              <input className="input" type="number" step="1" min="0" max="100"
-                value={pfMinScore} onChange={(e)=>setPfMinScore(Number(e.target.value)||0)} />
-            </div>
-            <div style={{width:260}}>
-              <label className="lbl">Stat threshold</label>
-              <div className="row" style={{gap:8}}>
-                <select className="input" value={pfUseStat} onChange={e=>setPfUseStat(e.target.value)}>
-                  {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+      <>
+        <div className="card">
+          <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
+            <div style={{fontWeight:800}}>Player Database</div>
+            <div className="badge">Choose up to {MAX_DB_STATS} stats</div>
+            <div className="badge">{dbStatFilterMode === "percentile" ? "Percentile view" : "Raw view"}</div>
+            <div className="badge">{dbResults.length} results</div>
+          </div>
+          <div className="cardBody" style={{display:"flex", flexDirection:"column", gap:12}}>
+            <form onSubmit={submitDbSearch} className="dbToolbar">
+              <div style={{flex:"1 1 260px", minWidth:220}}>
+                <label className="lbl">Search by player, club, position, or nation</label>
+                <input
+                  className="input"
+                  value={dbSearchInput}
+                  placeholder="Type query and hit Search..."
+                  onChange={e => setDbSearchInput(e.target.value)}
+                />
+              </div>
+              <div style={{width:220}}>
+                <label className="lbl">Club filter</label>
+                <select className="input" value={dbClubFilter} onChange={e => setDbClubFilter(e.target.value)}>
+                  <option value="">All clubs</option>
+                  {dbClubOptions.map(club => <option key={club} value={club}>{club}</option>)}
                 </select>
-                <input className="input" style={{width:120}} type="number" step="0.01"
-                  value={pfMinStat} onChange={(e)=>setPfMinStat(Number(e.target.value)||0)} />
+              </div>
+              <button className="btn" type="submit">Search</button>
+              <button className="btn ghost tight" type="button" onClick={clearDbSearch}>Clear</button>
+            </form>
+
+            <div className="dbToolbar">
+              <div style={{width:320, maxWidth:"100%"}}>
+                <label className="lbl">Add database stat filter</label>
+                <select className="input" value={dbFilterStatPicker} onChange={e => setDbFilterStatPicker(e.target.value)}>
+                  {metricBuilderOptions.map(stat => <option key={stat} value={stat}>{LABELS.get(stat) || stat}</option>)}
+                </select>
+              </div>
+              <button className="btn ghost tight" type="button" onClick={addDbStatFilter}>+ Add Filter</button>
+              <button className="btn ghost tight" type="button" onClick={clearDbStatFilters} disabled={!activeDbStatFilters.length}>Clear Filters</button>
+            </div>
+
+            <div className="dbToolbar">
+              <div style={{width:220, maxWidth:"100%"}}>
+                <label className="lbl">Combine</label>
+                <select className="input" value={dbStatFilterLogic} onChange={e => setDbStatFilterLogic(e.target.value)}>
+                  <option value="AND">AND</option>
+                  <option value="OR">OR</option>
+                </select>
+              </div>
+              <div style={{width:220, maxWidth:"100%"}}>
+                <label className="lbl">Compare using</label>
+                <select className="input" value={dbStatFilterMode} onChange={e => setDbStatFilterMode(e.target.value)}>
+                  <option value="raw">Raw stats</option>
+                  <option value="percentile">Percentiles</option>
+                </select>
               </div>
             </div>
-            <div style={{display:"flex", alignItems:"center", gap:8}}>
-              <label className="lbl" style={{margin:0}}>Only Underrated</label>
-              <input type="checkbox" checked={pfUnderratedOnly} onChange={(e)=>setPfUnderratedOnly(e.target.checked)} />
-            </div>
-            <div style={{width:160}}>
-              <label className="lbl">Underrated margin</label>
-              <input className="input" type="number" step="0.01" min="0" max="1"
-                value={pfUnderratedMargin} onChange={(e)=>setPfUnderratedMargin(Math.max(0, Math.min(1, Number(e.target.value)||0.15)))} />
-            </div>
-          </div>
-        </div>
 
-        <div className="cardBody scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th><th>Club</th><th>Pos</th><th>Age</th><th>Minutes</th>
-                <th>Best Role</th><th>Best Score</th><th>{pfRole} Score</th><th>{LABELS.get(pfUseStat)||pfUseStat}</th>
-                <th>Game Value</th><th>True Value</th><th>Delta</th><th>Buy At</th>
-                <th>Curr Wage</th><th>Fair Wage</th><th>Max Wage</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rowsFiltered.map((p,i)=>(
-                <tr key={i} style={{cursor:"default"}}>
-                  <td>{p.name}</td>
-                  <td>{p.club||"—"}</td>
-                  <td>{p.pos||"—"}</td>
-                  <td>{Number.isFinite(p.age)? tf(p.age,0):"—"}</td>
-                  <td>{Number.isFinite(p.mins)? tf(p.mins,0):"—"}</td>
-                  <td>{p.bestRole||"—"}</td>
-                  <td>{Number.isFinite(p.bestScore)? tf(p.bestScore,2) : "—"}</td>
-                  <td>{Number.isFinite(p.scoreInRole)? tf(p.scoreInRole,2) : "—"}</td>
-                  <td>{Number.isFinite(p.statVal)? tf(p.statVal,2) : "—"}</td>
-                  <td>{Number.isFinite(p.gameMid)? money(p.gameMid) : "—"}</td>
-                  <td>{money(p.tv)}</td>
-                  <td style={{color: Number.isFinite(p.gameMid) && (p.tv - p.gameMid) > 0 ? "var(--accent2)" : "var(--ink)"}}>
-                    {Number.isFinite(p.gameMid)? money(p.tv - p.gameMid) : "—"}
-                  </td>
-                  <td>{money(p.ba)}</td>
-                  <td>{Number.isFinite(p.currW)? money(p.currW)+"/wk" : "—"}</td>
-                  <td>{money(p.fw)}/wk</td>
-                  <td>{money(p.mw)}/wk</td>
-                </tr>
+            <div className="statFilterList">
+              {(Array.isArray(dbStatFilters) ? dbStatFilters : []).map((f, idx) => (
+                <div key={`db-sf-${idx}`} className="statFilterRow">
+                  <select className="input" value={f?.stat || ""} onChange={e => updateDbStatFilter(idx, { stat: e.target.value })}>
+                    {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                  </select>
+                  <select className="input" value={f?.op || ">="} onChange={e => updateDbStatFilter(idx, { op: e.target.value })}>
+                    <option value=">=">&gt;=</option>
+                    <option value=">">&gt;</option>
+                    <option value="=">=</option>
+                    <option value="<">&lt;</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input className="input" type="number" step="0.01" value={f?.value ?? ""} onChange={e => updateDbStatFilter(idx, { value: e.target.value })} placeholder="Value" />
+                  <button className="btn ghost tight statFilterRemove" type="button" onClick={() => removeDbStatFilter(idx)}>Remove</button>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
 
-          <div style={{display:"flex", gap:8, marginTop:10, alignItems:"center"}}>
-            <div style={{flex:1}}>
-              <div className="status">Search only applies on Enter or Apply — it will not filter while you type.</div>
+            <div className="dbToolbar">
+              <div style={{width:320, maxWidth:"100%"}}>
+                <label className="lbl">Add stat to cards</label>
+                <select className="input" value={dbCardStatPicker} onChange={e => setDbCardStatPicker(e.target.value)}>
+                  {metricBuilderOptions.map(stat => (
+                    <option key={stat} value={stat}>{LABELS.get(stat) || stat}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                className="btn ghost tight"
+                type="button"
+                onClick={addSelectedStat}
+                disabled={!dbCardStatPicker || selectedStatSet.has(dbCardStatPicker) || selectedStats.length >= MAX_DB_STATS}
+                title={selectedStats.length >= MAX_DB_STATS ? `Maximum of ${MAX_DB_STATS} stats selected` : "Add selected stat"}
+              >
+                Add Stat
+              </button>
+              <button className="btn ghost tight" type="button" onClick={resetSelectedStats}>Reset Default Stats</button>
             </div>
-            <div style={{display:"flex", gap:8}}>
-              <button className="btn ghost tight" onClick={() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))}>Apply</button>
-              <button className="btn ghost tight" onClick={clearSearch}>Clear</button>
+
+            <div className="dbSelectedStatRow">
+              {selectedStats.map(stat => (
+                <span key={stat} className="dbSelectedStat">
+                  <span>{LABELS.get(stat) || stat}</span>
+                  <button type="button" onClick={() => removeSelectedStat(stat)} aria-label={`Remove ${stat}`}>x</button>
+                </span>
+              ))}
+              {!selectedStats.length && <span className="status">Select at least one stat to render on cards.</span>}
             </div>
+            <div className="status">
+              Sidebar filters are always applied first. Player Database filters only narrow that cohort further.
+            </div>
+            <div className="status">Selected {selectedStats.length}/{MAX_DB_STATS} stats. Click any player card to open full profile.</div>
           </div>
         </div>
-      </div>
+
+        {!filteredRows.length && (
+          <div className="card">
+            <div className="cardBody">
+              <div className="status">No players remain after the sidebar filters are applied.</div>
+            </div>
+          </div>
+        )}
+
+        {!!filteredRows.length && !dbResults.length && (
+          <div className="card">
+            <div className="cardBody">
+              <div className="status">No players matched the combined sidebar and Player Database filters.</div>
+            </div>
+          </div>
+        )}
+
+        {!!dbResults.length && (
+          <div className="dbCardGrid">
+            {dbResults.map((r, idx) => {
+              const name = getCell(r, "Name") || `Player ${idx + 1}`;
+              const club = getCell(r, "Club") || "No club";
+              const pos = getCell(r, "Pos") || "N/A";
+              const age = numerify(getCell(r, "Age"));
+              const cardKey = `${name}-${club}-${idx}`;
+              return (
+                <button
+                  key={cardKey}
+                  type="button"
+                  className="dbPlayerCard"
+                  onClick={() => {
+                    setPlayer(name);
+                    setMode("Player Profile");
+                  }}
+                  title={`Open ${name}'s profile`}
+                >
+                  <div className="dbCardHeader">
+                    <div className="dbCardName">{name}</div>
+                    <div className="dbCardMeta">{club}</div>
+                    <div className="dbCardMeta">{pos}{Number.isFinite(age) ? ` • Age ${tf(age, 0)}` : ""}</div>
+                  </div>
+                  <div className="dbCardStats">
+                    {selectedStats.map(stat => (
+                      <div key={`${cardKey}-${stat}`} className="dbCardStat">
+                        <div className="dbCardStatLabel">{LABELS.get(stat) || stat}</div>
+                        <div className="dbCardStatValue">{formatDbStatValue(r, stat)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="dbCardFooter">Open Profile</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </>
     );
   }
 
   /* ---------- Sidebar ---------- */
-  function Sidebar(){
+  function renderSidebar(){
     return (
       <>
         <button 
@@ -5437,8 +5511,35 @@ export default function App(){
           <section className="section">
             <div className="sectionHead">Data</div>
             <div className="sectionBody">
-              <input type="file" accept=".csv,.html,.htm" onChange={handleFile}/>
+              <input type="file" accept=".csv,.html,.htm" multiple onChange={handleFile}/>
+              <div className="status">Upload up to 10 files at once, maximum 25,000 players total.</div>
               <div className="status">{status}</div>
+            </div>
+          </section>
+
+          <section className="section">
+            <div className="sectionHead">Navigation</div>
+            <div className="sectionBody">
+              <label className="lbl">Domain</label>
+              <div className="modeDomainRow">
+                {MODE_GROUPS.map(group => {
+                  const activeInGroup = group.modes.includes(mode);
+                  return (
+                    <button
+                      key={group.key}
+                      className={`modeDomainBtn ${activeInGroup ? "active" : ""}`}
+                      onClick={() => setMode(group.modes[0])}
+                      title={group.description}
+                    >
+                      {group.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <label className="lbl" style={{marginTop:6}}>Module</label>
+              <select className="input" value={mode} onChange={e=>setMode(e.target.value)}>
+                {APP_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
             </div>
           </section>
 
@@ -5464,6 +5565,26 @@ export default function App(){
                 <label className="lbl">Max age</label>
                 <input className="input" type="number" value={maxAge}
                   onChange={e=>setMaxAge(Number(e.target.value)||60)} />
+              </div>
+            </div>
+            <div className="row">
+              <div className="col">
+                <label className="lbl">Min height (ft'in or cm)</label>
+                <input
+                  className="input"
+                  placeholder="e.g. 6'0 or 183 cm"
+                  value={minHeight}
+                  onChange={e=>setMinHeight(e.target.value)}
+                />
+              </div>
+              <div className="col">
+                <label className="lbl">Max height (ft'in or cm)</label>
+                <input
+                  className="input"
+                  placeholder="e.g. 6'4 or 193 cm"
+                  value={maxHeight}
+                  onChange={e=>setMaxHeight(e.target.value)}
+                />
               </div>
             </div>
 
@@ -5499,15 +5620,101 @@ export default function App(){
               {uniqueClubs.map(club => <option key={club} value={club}>{club}</option>)}
             </select>
 
-            <label className="lbl">Search (name / club / pos) — press Enter to apply</label>
+            <label className="lbl">Search (name / club / pos) — live</label>
             <div className="row">
-              <SearchInput
+              <input
                 className="input"
                 placeholder="Type name, club or pos…"
-                initialValue={searchQuery}
-                onSearch={handleSearch}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Escape") setSearchQuery("");
+                }}
+                autoComplete="off"
               />
               <button className="btn ghost tight" onClick={clearSearch}>Clear</button>
+            </div>
+
+            <div className="row">
+              <div className="col">
+                <label className="lbl">Role shortcut</label>
+                <select className="input" value={role} onChange={e=>setRole(e.target.value)}>
+                  {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <label className="lbl" style={{marginTop: "8px"}}>Stat filters (live)</label>
+            {!!quickStatPresets.length && (
+              <div style={{display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8}}>
+                {quickStatPresets.map((preset, idx) => (
+                  <button
+                    key={`preset-${idx}`}
+                    className="btn ghost tight"
+                    onClick={() => upsertStatFilter(preset.stat, preset.op, preset.value)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="row" style={{gap: 8, marginBottom: 8}}>
+              <div className="col">
+                <label className="lbl">Combine</label>
+                <select className="input" value={statFilterLogic} onChange={e=>setStatFilterLogic(e.target.value)}>
+                  <option value="AND">AND</option>
+                  <option value="OR">OR</option>
+                </select>
+              </div>
+              <div className="col">
+                <label className="lbl">Compare using</label>
+                <select className="input" value={statFilterMode} onChange={e=>setStatFilterMode(e.target.value)}>
+                  <option value="raw">Raw stats</option>
+                  <option value="percentile">Percentiles</option>
+                </select>
+              </div>
+            </div>
+            <div className="statFilterList">
+              {(Array.isArray(statFilters) ? statFilters : []).map((f, idx) => (
+                <div key={`sf-${idx}`} className="statFilterRow">
+                  <select
+                    className="input"
+                    value={f?.stat || ""}
+                    onChange={e => updateStatFilter(idx, { stat: e.target.value })}
+                  >
+                    {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                  </select>
+                  <select
+                    className="input"
+                    value={f?.op || ">="}
+                    onChange={e => updateStatFilter(idx, { op: e.target.value })}
+                  >
+                    <option value=">=">&gt;=</option>
+                    <option value=">">&gt;</option>
+                    <option value="=">=</option>
+                    <option value="<">&lt;</option>
+                    <option value="<=">&lt;=</option>
+                  </select>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    value={f?.value ?? ""}
+                    onChange={e => updateStatFilter(idx, { value: e.target.value })}
+                    placeholder="Value"
+                  />
+                  <button className="btn ghost tight statFilterRemove" onClick={() => removeStatFilter(idx)}>Remove</button>
+                </div>
+              ))}
+              <div className="row" style={{gap: 8}}>
+                <button className="btn ghost tight" onClick={addStatFilter}>+ Add Stat Filter</button>
+                {(Array.isArray(statFilters) && statFilters.length > 0) && (
+                  <button className="btn ghost tight" onClick={clearStatFilters}>Clear Stat Filters</button>
+                )}
+              </div>
+            </div>
+            <div className="status" style={{marginTop: 8}}>
+              Showing {filteredRows.length} / {rows.length} players
             </div>
           </div>
         </section>
@@ -5523,6 +5730,9 @@ export default function App(){
               All calculations normalized to: {compScope} ({compScope === "Filtered Cohort" ? filteredRows.length : 
                                                               compScope === "All Loaded" ? rows.length : 
                                                               scopeRows.length} players)
+            </div>
+            <div className="statChip" style={{display:"inline-flex", width:"fit-content"}}>
+              Avg Rating {Number.isFinite(filteredAvgRating) ? filteredAvgRating.toFixed(1) : "—"}
             </div>
 
             <label className="lbl">Player</label>
@@ -5542,14 +5752,25 @@ export default function App(){
 
   /* ---------- Topbar ---------- */
   function Topbar(){
-    const modes = ["Player Profile","Radar","Percentiles","Role Matrix","Stat Scatter","Role Leaders","Best Roles","Stat Leaders","Custom Archetype","Transfer Planner","Config"];
+    const activeGroup = MODE_GROUPS.find(g => g.modes.includes(mode))?.label || "Player Analysis";
     return (
       <div className="topbar">
-        <div className="brand">ScoutView</div>
+        <div className="brandStack">
+          <div className="brand">ScoutView Suite</div>
+          <div className="brandSub">{activeGroup} / {mode}</div>
+        </div>
+        <select className="input modeSelect" value={mode} onChange={e=>setMode(e.target.value)}>
+          {APP_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
         <div className="tabs">
-          {modes.map(m => (
-            <button key={m} className={`tab ${mode===m?"active":""}`} onClick={()=>setMode(m)}>{m}</button>
+          {MODE_GROUPS.map(g => (
+            <button key={g.label} className={`tab ${g.modes.includes(mode)?"active":""}`} onClick={()=>setMode(g.modes[0])}>{g.label}</button>
           ))}
+        </div>
+        <div className="topStats">
+          <span className="statChip">Rows {filteredRows.length}/{rows.length}</span>
+          <span className="statChip">Scope: {compScope}</span>
+          <span className="statChip">Avg Rating {Number.isFinite(filteredAvgRating) ? filteredAvgRating.toFixed(1) : "—"}</span>
         </div>
         <div className="spacer"/>
         <div className="seg">
@@ -5568,13 +5789,15 @@ export default function App(){
       <div className="app">
         <Topbar/>
         <div className={`wrap ${sidebarCollapsed ? 'collapsed' : ''}`}>
-          <Sidebar/>
+          {renderSidebar()}
           <main className="main">
             {mode==="Player Profile" && <PlayerProfileMode/>}
+            {mode==="Player Database" && <PlayerDatabaseMode/>}
             {mode==="Radar" && <RadarMode/>}
             {mode==="Percentiles" && <PercentilesMode/>}
             {mode==="Role Matrix" && <RoleMatrixMode/>}
             {mode==="Stat Scatter" && <StatScatterMode/>}
+            {mode==="Custom Metrics" && <CustomMetricsMode/>}
             {mode==="Role Leaders" && <RoleLeadersMode/>}
             {mode==="Best Roles" && <BestRolesMode/>}
             {mode==="Stat Leaders" && <StatLeadersMode/>}
