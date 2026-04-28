@@ -63,10 +63,12 @@ const POS_COLORS = {
 };
 const POS_BASE_TO_CENTER = { ST:"ST (C)", M:"M (C)", AM:"AM (C)", D:"D (C)" };
 const APP_MODES = [
+  "Tutorial",
   "Player Profile","Player Database","Radar","Percentiles","Role Matrix","Stat Scatter","Custom Metrics",
   "Role Leaders","Best Roles","Stat Leaders","Custom Archetype","Transfer Planner","Config"
 ];
 const MODE_GROUPS = [
+  { label: "Onboarding", modes: ["Tutorial"] },
   { label: "Player Analysis", modes: ["Player Profile", "Player Database", "Radar", "Percentiles"] },
   { label: "Comparisons", modes: ["Role Matrix", "Stat Scatter", "Role Leaders", "Best Roles", "Stat Leaders"] },
   { label: "Planning", modes: ["Transfer Planner", "Custom Archetype"] },
@@ -212,6 +214,16 @@ body::after{
 .input{ width:100%; padding:11px 12px; border-radius:12px; border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 8%); background:linear-gradient(180deg, var(--surface), var(--surface2)); color:var(--ink); outline:none; font-size:14px; box-sizing:border-box; position:relative; z-index:10; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06); }
 .input:focus{ box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent), 0 0 24px color-mix(in oklab, var(--accent) 24%, transparent); border-color:var(--accent); z-index:15; }
 select.input{ min-width:0; max-width:100%; }
+select.input option,
+select.input optgroup{
+  background-color: var(--bgDeep);
+  color: var(--ink);
+}
+.input::placeholder,
+textarea::placeholder{
+  color: color-mix(in oklab, var(--muted), transparent 10%);
+  opacity: 1;
+}
 .sectionBody .input{ width:100%; min-width:0; }
 .lbl{ font-size:12px; color:var(--muted); margin-bottom:4px; display:block; }
 
@@ -357,6 +369,16 @@ select.input{ min-width:0; max-width:100%; }
 .cardHead{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%); background:linear-gradient(90deg, color-mix(in oklab, var(--bg), white 6%), transparent); font-size:16px; }
 .cardHeader{ padding:14px 16px; border-bottom:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 10%); background:linear-gradient(90deg, color-mix(in oklab, var(--bg), white 6%), transparent); font-size:12px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; }
 .cardBody{ padding:16px; }
+.section,
+.sectionHead,
+.sectionBody,
+.card,
+.cardHead,
+.cardHeader,
+.cardBody,
+.table td{
+  color: var(--ink);
+}
 .row{ display:flex; gap:8px; align-items:center; }
 .col{ flex:1; min-width:0; }
 
@@ -461,6 +483,62 @@ select.input{ min-width:0; max-width:100%; }
 .d3tip .t-row{ display:flex; justify-content:space-between; gap:12px; font-size:11px; padding:2px 0; }
 
 .status{ font-size:12px; color:var(--muted); }
+.tutorialLanding{ display:flex; flex-direction:column; gap:12px; }
+.tutorialHero{
+  border:1px solid color-mix(in oklab, var(--accent) 40%, var(--cardBorder));
+  border-radius:18px;
+  padding:18px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in oklab, var(--accent) 28%, transparent), transparent 55%),
+    linear-gradient(145deg, color-mix(in oklab, var(--bgLift), white 3%), color-mix(in oklab, var(--card), black 3%));
+  box-shadow:0 18px 28px color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.tutorialKicker{ font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:700; }
+.tutorialTitle{ margin-top:6px; font-size:28px; line-height:1.2; font-weight:700; letter-spacing:0.02em; }
+.tutorialLead{ margin-top:8px; font-size:14px; color:var(--muted); max-width:74ch; }
+.tutorialCredit{
+  margin-top:12px;
+  padding:12px;
+  border-radius:12px;
+  border:1px solid color-mix(in oklab, var(--accent2) 58%, var(--cardBorder));
+  background:linear-gradient(135deg, color-mix(in oklab, var(--accent2) 20%, transparent), color-mix(in oklab, var(--accent) 10%, transparent));
+  font-size:14px;
+  font-weight:600;
+}
+.tutorialActions{ margin-top:14px; display:flex; flex-wrap:wrap; gap:8px; }
+.tutorialGrid{ display:grid; grid-template-columns:1.2fr 1fr; gap:12px; }
+.tutorialVideoWrap{
+  position:relative;
+  width:100%;
+  padding-top:56.25%;
+  border-radius:14px;
+  overflow:hidden;
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 16%);
+  background:color-mix(in oklab, var(--bg), black 8%);
+}
+.tutorialVideoWrap iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; }
+.tutorialStepList{ margin:0; padding-left:20px; display:flex; flex-direction:column; gap:8px; color:var(--ink); }
+.tutorialStepList li{ line-height:1.45; }
+.tutorialCallout{
+  border:1px solid color-mix(in oklab, var(--cardBorder), var(--accent) 12%);
+  border-radius:12px;
+  padding:12px;
+  background:linear-gradient(180deg, var(--surface), transparent);
+}
+.tutorialWarn{
+  border-color:color-mix(in oklab, var(--accent2) 62%, var(--cardBorder));
+  background:linear-gradient(180deg, color-mix(in oklab, var(--accent2) 14%, transparent), transparent);
+}
+.tutorialNoteTitle{ font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); font-weight:700; margin-bottom:6px; }
+.tutorialBulletList{ margin:0; padding-left:18px; display:flex; flex-direction:column; gap:6px; }
+
+@media(max-width:980px){
+  .tutorialGrid{ grid-template-columns:1fr; }
+}
+@media(max-width:640px){
+  .tutorialTitle{ font-size:24px; }
+  .tutorialHero{ padding:14px; }
+}
 .legendRow{ display:flex; flex-wrap:wrap; gap:10px; margin:8px 0 2px; }
 .legendItem{ display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
 .legendSwatch{ width:12px; height:12px; border-radius:3px; border:1px solid color-mix(in oklab, black 18%, transparent); }
@@ -546,6 +624,16 @@ const numerify = (v) => {
   const num = Number(s);
   return Number.isFinite(num) ? num * mult : NaN;
 };
+
+const numericStep = (value, fallback = 1) => {
+  const raw = String(value ?? "").trim();
+  const match = raw.match(/^-?\d+(?:\.(\d+))?$/);
+  if (!match) return fallback;
+  const decimals = (match[1] || "").length;
+  return decimals > 0 ? 1 / (10 ** decimals) : 1;
+};
+
+const makeFilterId = () => `flt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 const parseHeightToInches = (v) => {
   if (v === null || v === undefined) return NaN;
@@ -2566,8 +2654,9 @@ export default function App(){
   /* ---------- UI Theme / Mode ---------- */
   const [themeName, setThemeName] = useStickyState("ui:theme","sleek");
   const theme = THEMES[themeName] || THEMES.sleek;
-  const [mode, setMode] = useStickyState("ui:mode","Player Profile");
+  const [mode, setMode] = useStickyState("ui:mode","Tutorial");
   const [sidebarCollapsed, setSidebarCollapsed] = useStickyState("ui:sidebarCollapsed", false);
+  const uploadInputRef = useRef(null);
 
   /* ---------- Data ---------- */
   const [rows, setRows] = useState([]);
@@ -2699,23 +2788,24 @@ export default function App(){
       : (metricBuilderOptions[0] || "");
     setStatFilters(prev => {
       const base = Array.isArray(prev) ? prev : [];
-      return [...base, { stat: fallbackStat, op: ">=", value: "" }];
+      return [...base, { id: makeFilterId(), stat: fallbackStat, op: ">=", value: "" }];
     });
   }, [metricBuilderOptions, setStatFilters]);
 
-  const updateStatFilter = useCallback((idx, patch) => {
+  const updateStatFilter = useCallback((id, patch) => {
     setStatFilters(prev => {
       const base = Array.isArray(prev) ? [...prev] : [];
-      if (!base[idx]) return base;
-      base[idx] = { ...base[idx], ...patch };
+      const idx = base.findIndex(f => String(f?.id || "") === String(id || ""));
+      if (idx < 0 || !base[idx]) return base;
+      base[idx] = { ...base[idx], ...patch, id: base[idx].id || makeFilterId() };
       return base;
     });
   }, [setStatFilters]);
 
-  const removeStatFilter = useCallback((idx) => {
+  const removeStatFilter = useCallback((id) => {
     setStatFilters(prev => {
       const base = Array.isArray(prev) ? prev : [];
-      return base.filter((_, i) => i !== idx);
+      return base.filter(f => String(f?.id || "") !== String(id || ""));
     });
   }, [setStatFilters]);
 
@@ -2728,15 +2818,24 @@ export default function App(){
     setStatFilters(prev => {
       const base = Array.isArray(prev) ? [...prev] : [];
       const idx = base.findIndex(f => String(f?.stat || "") === stat && String(f?.op || ">=") === op);
-      const next = { stat, op, value: String(value) };
+      const next = { id: makeFilterId(), stat, op, value: String(value) };
       if (idx >= 0) {
-        base[idx] = next;
+        base[idx] = { ...next, id: base[idx]?.id || next.id };
       } else {
         base.push(next);
       }
       return base;
     });
   }, [setStatFilters]);
+
+  useEffect(() => {
+    if (!Array.isArray(statFilters) || !statFilters.length) return;
+    if (statFilters.every(f => f?.id)) return;
+    setStatFilters(prev => {
+      const base = Array.isArray(prev) ? prev : [];
+      return base.map(f => ({ ...f, id: f?.id || makeFilterId() }));
+    });
+  }, [statFilters, setStatFilters]);
 
   const clearAppCache = useCallback(() => {
     const confirmed = window.confirm("Clear saved app settings and selections, then reload?");
@@ -2756,9 +2855,22 @@ export default function App(){
   const [compScope, setCompScope] = useStickyState("comp:scope", "Filtered Cohort");
 
   /* ---------- Custom archetype ---------- */
-  const [customName, setCustomName] = useStickyState("custom:name", "Custom Archetype");
+  const [customName, setCustomName] = useState("Custom Archetype");
   const [customBaseline, setCustomBaseline] = useStickyState("custom:baseline", ["M (C)"]);
   const [customWeights, setCustomWeights] = useStickyState("custom:weights", { "Progressive Passes/90": 1.4, "Key Passes/90": 1.2, "Dribbles/90": 1.2 });
+
+  // Always start each page load on the onboarding tutorial.
+  useEffect(() => {
+    setMode("Tutorial");
+  }, []);
+
+  const openUploadChooser = useCallback(() => {
+    setSidebarCollapsed(false);
+    // Keep the click tied to the user's action while waiting for layout updates.
+    setTimeout(() => {
+      uploadInputRef.current?.click();
+    }, 0);
+  }, [setSidebarCollapsed]);
 
   /* ---------- Inject theme CSS ---------- */
   useEffect(()=>{
@@ -2920,6 +3032,7 @@ export default function App(){
       const warnings = warningBits.length ? ` (${warningBits.join(". ")})` : "";
 
       setStatus(`Loaded ${mergedRows.length} rows from ${loadedFileCount} file${loadedFileCount === 1 ? "" : "s"}, ${finalColumns.length} columns. Player names normalized (accents removed).${warnings}`);
+      setMode("Role Leaders");
     } catch (err) {
       console.error(err);
       setStatus(`Failed: ${String(err?.message || err)}`);
@@ -3785,7 +3898,14 @@ export default function App(){
           <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
             <div className="col" style={{minWidth:180}}>
               <label className="lbl">Name</label>
-              <input className="input" value={cmName} onChange={e=>setCmName(e.target.value)} placeholder="e.g. Aggression Balance" />
+              <input
+                className="input"
+                type="text"
+                autoComplete="off"
+                value={cmName}
+                onChange={e=>setCmName(e.target.value)}
+                placeholder="e.g. Aggression Balance"
+              />
             </div>
             <div className="col" style={{minWidth:180}}>
               <label className="lbl">Metric A</label>
@@ -4067,7 +4187,7 @@ export default function App(){
                     </select>
                   </div>
                   <div style={{width:120}}>
-                    <input className="input" type="number" step="0.1" value={customWeights[s]}
+                    <input className="input" type="number" step={numericStep(customWeights[s], 0.1)} value={customWeights[s]}
                       onChange={(e)=> setCustomWeights({...customWeights, [s]: Number(e.target.value)||0})}/>
                   </div>
                   <button className="btn ghost alt tight" onClick={()=>removeStat(s)}>Remove</button>
@@ -4691,6 +4811,7 @@ export default function App(){
               <input 
                 className="input" 
                 type="number" 
+                step={numericStep(transferBudget, 0.1)}
                 value={transferBudget}
                 onChange={e => {
                   const val = e.target.value;
@@ -4706,6 +4827,7 @@ export default function App(){
               <input 
                 className="input" 
                 type="number" 
+                step={numericStep(transferMinAge, 1)}
                 value={transferMinAge}
                 onChange={e => {
                   const val = e.target.value;
@@ -4721,6 +4843,7 @@ export default function App(){
               <input 
                 className="input" 
                 type="number" 
+                step={numericStep(transferMaxAge, 1)}
                 value={transferMaxAge}
                 onChange={e => {
                   const val = e.target.value;
@@ -4736,6 +4859,7 @@ export default function App(){
               <input 
                 className="input" 
                 type="number" 
+                step={numericStep(transferMinRating, 1)}
                 value={transferMinRating}
                 onChange={e => {
                   const val = e.target.value;
@@ -5204,23 +5328,24 @@ export default function App(){
         : (metricBuilderOptions[0] || "");
       setDbStatFilters(prev => {
         const base = Array.isArray(prev) ? prev : [];
-        return [...base, { stat: dbFilterStatPicker || fallbackStat, op: ">=", value: "" }];
+        return [...base, { id: makeFilterId(), stat: dbFilterStatPicker || fallbackStat, op: ">=", value: "" }];
       });
     }, [metricBuilderOptions, dbFilterStatPicker, setDbStatFilters]);
 
-    const updateDbStatFilter = useCallback((idx, patch) => {
+    const updateDbStatFilter = useCallback((id, patch) => {
       setDbStatFilters(prev => {
         const base = Array.isArray(prev) ? [...prev] : [];
-        if (!base[idx]) return base;
-        base[idx] = { ...base[idx], ...patch };
+        const idx = base.findIndex(f => String(f?.id || "") === String(id || ""));
+        if (idx < 0 || !base[idx]) return base;
+        base[idx] = { ...base[idx], ...patch, id: base[idx].id || makeFilterId() };
         return base;
       });
     }, [setDbStatFilters]);
 
-    const removeDbStatFilter = useCallback((idx) => {
+    const removeDbStatFilter = useCallback((id) => {
       setDbStatFilters(prev => {
         const base = Array.isArray(prev) ? prev : [];
-        return base.filter((_, i) => i !== idx);
+        return base.filter(f => String(f?.id || "") !== String(id || ""));
       });
     }, [setDbStatFilters]);
 
@@ -5237,6 +5362,15 @@ export default function App(){
         }))
         .filter(f => f.stat && f.value !== "" && Number.isFinite(Number(f.value)));
     }, [dbStatFilters]);
+
+    useEffect(() => {
+      if (!Array.isArray(dbStatFilters) || !dbStatFilters.length) return;
+      if (dbStatFilters.every(f => f?.id)) return;
+      setDbStatFilters(prev => {
+        const base = Array.isArray(prev) ? prev : [];
+        return base.map(f => ({ ...f, id: f?.id || makeFilterId() }));
+      });
+    }, [dbStatFilters, setDbStatFilters]);
 
     const selectedStats = Array.isArray(dbSelectedStats)
       ? dbSelectedStats.slice(0, MAX_DB_STATS)
@@ -5384,19 +5518,19 @@ export default function App(){
 
             <div className="statFilterList">
               {(Array.isArray(dbStatFilters) ? dbStatFilters : []).map((f, idx) => (
-                <div key={`db-sf-${idx}`} className="statFilterRow">
-                  <select className="input" value={f?.stat || ""} onChange={e => updateDbStatFilter(idx, { stat: e.target.value })}>
+                <div key={f?.id || `db-sf-${idx}`} className="statFilterRow">
+                  <select className="input" value={f?.stat || ""} onChange={e => updateDbStatFilter(f?.id, { stat: e.target.value })}>
                     {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
                   </select>
-                  <select className="input" value={f?.op || ">="} onChange={e => updateDbStatFilter(idx, { op: e.target.value })}>
+                  <select className="input" value={f?.op || ">="} onChange={e => updateDbStatFilter(f?.id, { op: e.target.value })}>
                     <option value=">=">&gt;=</option>
                     <option value=">">&gt;</option>
                     <option value="=">=</option>
                     <option value="<">&lt;</option>
                     <option value="<=">&lt;=</option>
                   </select>
-                  <input className="input" type="number" step="0.01" value={f?.value ?? ""} onChange={e => updateDbStatFilter(idx, { value: e.target.value })} placeholder="Value" />
-                  <button className="btn ghost tight statFilterRemove" type="button" onClick={() => removeDbStatFilter(idx)}>Remove</button>
+                  <input className="input" type="number" step={numericStep(f?.value, 0.1)} value={f?.value ?? ""} onChange={e => updateDbStatFilter(f?.id, { value: e.target.value })} placeholder="Value" />
+                  <button className="btn ghost tight statFilterRemove" type="button" onClick={() => removeDbStatFilter(f?.id)}>Remove</button>
                 </div>
               ))}
             </div>
@@ -5496,6 +5630,99 @@ export default function App(){
     );
   }
 
+  function TutorialLandingMode(){
+    return (
+      <div className="tutorialLanding">
+        <div className="tutorialHero">
+          <div className="tutorialKicker">ScoutView Onboarding</div>
+          <div className="tutorialTitle">Set up your Football Manager export in 4 steps</div>
+          <div className="tutorialLead">
+            Follow this setup once, then start uploading your exports. The workflow below mirrors Mustermann&apos;s plugin setup process and keeps your files compatible with this app.
+          </div>
+          <div className="tutorialCredit">Thanks to mustermann for his pioneering work in the data driven space!</div>
+          <div className="tutorialActions">
+            <button className="btn" onClick={openUploadChooser}>Start Uploading Data</button>
+            <button className="btn ghost" onClick={() => setMode("Player Profile")}>Skip to App</button>
+            <a className="btn ghost alt" href="https://youtu.be/NugiVa5xpIY?si=GhBIdHQ_gFQwmA7s" target="_blank" rel="noreferrer">Open Mustermann Video</a>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="cardHead">Part 1: Install the data export plugin (BepInEx)</div>
+          <div className="cardBody tutorialGrid">
+            <div>
+              <div className="tutorialVideoWrap">
+                <iframe
+                  src="https://www.youtube.com/embed/NugiVa5xpIY"
+                  title="Mustermann Football Manager data export setup"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              </div>
+              <div className="status" style={{marginTop:8}}>
+                Recommended: follow Mustermann&apos;s video from start to finish before exporting data.
+              </div>
+            </div>
+            <div className="tutorialCallout tutorialWarn">
+              <div className="tutorialNoteTitle">Important CSV Rule</div>
+              <div style={{marginBottom:8}}>Your export must use semicolon delimiters (;).</div>
+              <ul className="tutorialBulletList">
+                <li>Option 1: update Windows regional list separator to semicolon.</li>
+                <li>Option 2: set semicolon delimiter directly in your spreadsheet import/export settings before saving CSV.</li>
+                <li>If your file is comma-delimited, imports can break or map incorrectly.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="cardHead">Part 2: Download and import Willum&apos;s view</div>
+          <div className="cardBody" style={{display:"grid", gap:12}}>
+            <div className="tutorialCallout">
+              <div className="tutorialNoteTitle">Download Prompt</div>
+              <div>Download <strong>Willum&apos;s Complete moneyball view.fmf</strong> before exporting.</div>
+              <div className="tutorialActions" style={{marginTop:10}}>
+                <a className="btn ghost tight" href="/downloads/willums-complete-moneyball-view.fmf" download>Download Willum&apos;s View (.fmf)</a>
+              </div>
+            </div>
+            <ol className="tutorialStepList">
+              <li>In Football Manager, open the Player Database view.</li>
+              <li>Right-click any stats header row at the top of the player table.</li>
+              <li>Choose Import View.</li>
+              <li>Select Willum&apos;s Complete moneyball view.fmf.</li>
+              <li>Your stat columns should load automatically once imported.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="cardHead">Part 3: Export limits and filters</div>
+          <div className="cardBody tutorialGrid">
+            <div className="tutorialCallout tutorialWarn">
+              <div className="tutorialNoteTitle">5000 Player Export Limit</div>
+              <ul className="tutorialBulletList">
+                <li>Football Manager exports are limited to 5000 players per file.</li>
+                <li>For full-database workflows, export one position at a time.</li>
+                <li>Then combine files in this app using the multiple import tool.</li>
+              </ul>
+            </div>
+            <div className="tutorialCallout">
+              <div className="tutorialNoteTitle">Included League Filters</div>
+              <ul className="tutorialBulletList">
+                <li><strong>leagues.fmf</strong> contains top leagues across most countries.</li>
+                <li><strong>lower leagues.fmf</strong> contains lower leagues and lower-quality top leagues.</li>
+              </ul>
+              <div className="tutorialActions" style={{marginTop:10}}>
+                <a className="btn ghost tight" href="/downloads/leagues.fmf" download>Download leagues.fmf</a>
+                <a className="btn ghost tight" href="/downloads/lower-leagues.fmf" download>Download lower leagues.fmf</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ---------- Sidebar ---------- */
   function renderSidebar(){
     return (
@@ -5511,7 +5738,7 @@ export default function App(){
           <section className="section">
             <div className="sectionHead">Data</div>
             <div className="sectionBody">
-              <input type="file" accept=".csv,.html,.htm" multiple onChange={handleFile}/>
+              <input ref={uploadInputRef} type="file" accept=".csv,.html,.htm" multiple onChange={handleFile}/>
               <div className="status">Upload up to 10 files at once, maximum 25,000 players total.</div>
               <div className="status">{status}</div>
             </div>
@@ -5526,7 +5753,7 @@ export default function App(){
                   const activeInGroup = group.modes.includes(mode);
                   return (
                     <button
-                      key={group.key}
+                      key={group.label}
                       className={`modeDomainBtn ${activeInGroup ? "active" : ""}`}
                       onClick={() => setMode(group.modes[0])}
                       title={group.description}
@@ -5558,13 +5785,19 @@ export default function App(){
             <div className="row">
               <div className="col">
                 <label className="lbl">Min minutes</label>
-                <input className="input" type="number" value={minMinutes}
-                  onChange={e=>setMinMinutes(Number(e.target.value)||0)} />
+                <input className="input" type="number" step={1} value={minMinutes}
+                  onChange={e=>{
+                    const n = Number(e.target.value);
+                    setMinMinutes(Number.isFinite(n) ? n : 0);
+                  }} />
               </div>
               <div className="col">
                 <label className="lbl">Max age</label>
-                <input className="input" type="number" value={maxAge}
-                  onChange={e=>setMaxAge(Number(e.target.value)||60)} />
+                <input className="input" type="number" step={1} value={maxAge}
+                  onChange={e=>{
+                    const n = Number(e.target.value);
+                    setMaxAge(Number.isFinite(n) ? n : 60);
+                  }} />
               </div>
             </div>
             <div className="row">
@@ -5609,8 +5842,11 @@ export default function App(){
               </div>
               <div className="col">
                 <label className="lbl">Year</label>
-                <input className="input" type="number" value={gameYear} min="2020" max="2035"
-                  onChange={e=>setGameYear(Number(e.target.value)||2024)} />
+                <input className="input" type="number" step={1} value={gameYear} min="2020" max="2035"
+                  onChange={e=>{
+                    const n = Number(e.target.value);
+                    setGameYear(Number.isFinite(n) ? n : 2024);
+                  }} />
               </div>
             </div>
 
@@ -5676,18 +5912,18 @@ export default function App(){
             </div>
             <div className="statFilterList">
               {(Array.isArray(statFilters) ? statFilters : []).map((f, idx) => (
-                <div key={`sf-${idx}`} className="statFilterRow">
+                <div key={f?.id || `sf-${idx}`} className="statFilterRow">
                   <select
                     className="input"
                     value={f?.stat || ""}
-                    onChange={e => updateStatFilter(idx, { stat: e.target.value })}
+                    onChange={e => updateStatFilter(f?.id, { stat: e.target.value })}
                   >
                     {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
                   </select>
                   <select
                     className="input"
                     value={f?.op || ">="}
-                    onChange={e => updateStatFilter(idx, { op: e.target.value })}
+                    onChange={e => updateStatFilter(f?.id, { op: e.target.value })}
                   >
                     <option value=">=">&gt;=</option>
                     <option value=">">&gt;</option>
@@ -5698,12 +5934,12 @@ export default function App(){
                   <input
                     className="input"
                     type="number"
-                    step="0.01"
+                    step={numericStep(f?.value, 1)}
                     value={f?.value ?? ""}
-                    onChange={e => updateStatFilter(idx, { value: e.target.value })}
+                    onChange={e => updateStatFilter(f?.id, { value: e.target.value })}
                     placeholder="Value"
                   />
-                  <button className="btn ghost tight statFilterRemove" onClick={() => removeStatFilter(idx)}>Remove</button>
+                  <button className="btn ghost tight statFilterRemove" onClick={() => removeStatFilter(f?.id)}>Remove</button>
                 </div>
               ))}
               <div className="row" style={{gap: 8}}>
@@ -5752,7 +5988,7 @@ export default function App(){
 
   /* ---------- Topbar ---------- */
   function Topbar(){
-    const activeGroup = MODE_GROUPS.find(g => g.modes.includes(mode))?.label || "Player Analysis";
+    const activeGroup = MODE_GROUPS.find(g => g.modes.includes(mode))?.label || "Onboarding";
     return (
       <div className="topbar">
         <div className="brandStack">
@@ -5791,17 +6027,18 @@ export default function App(){
         <div className={`wrap ${sidebarCollapsed ? 'collapsed' : ''}`}>
           {renderSidebar()}
           <main className="main">
+            {mode==="Tutorial" && <TutorialLandingMode/>}
             {mode==="Player Profile" && <PlayerProfileMode/>}
             {mode==="Player Database" && <PlayerDatabaseMode/>}
             {mode==="Radar" && <RadarMode/>}
             {mode==="Percentiles" && <PercentilesMode/>}
             {mode==="Role Matrix" && <RoleMatrixMode/>}
             {mode==="Stat Scatter" && <StatScatterMode/>}
-            {mode==="Custom Metrics" && <CustomMetricsMode/>}
+            {mode==="Custom Metrics" && CustomMetricsMode()}
             {mode==="Role Leaders" && <RoleLeadersMode/>}
             {mode==="Best Roles" && <BestRolesMode/>}
             {mode==="Stat Leaders" && <StatLeadersMode/>}
-            {mode==="Custom Archetype" && <CustomArchetypeMode/>}
+            {mode==="Custom Archetype" && CustomArchetypeMode()}
             {mode==="Transfer Planner" && <TransferPlannerMode/>}
             {mode==="Config" && <ConfigMode/>}
           </main>
