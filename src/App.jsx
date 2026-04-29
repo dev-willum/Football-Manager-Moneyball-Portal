@@ -1,4 +1,4 @@
-// src/App.jsx — FULL FILE — PART 1/2 (PATCH)
+// src/App.jsx - FULL FILE - PART 1/2 (PATCH)
 import React, { useEffect, useCallback,useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import Papa from "papaparse";
@@ -599,12 +599,13 @@ const LABELS = new Map([
 /* ===================== Helpers ===================== */
 const strip = (s) => String(s||"").trim();
 const keyNorm = (s) => strip(s).toLowerCase().replace(/[^a-z0-9]+/g,"");
-const LESS_IS_BETTER = new Set(["Conceded/90","Goals Allowed/90","G/Sh","G/SoT"]);
-const tf = (v, n = 1) => (Number.isFinite(v) ? Number(v).toFixed(n) : "—");
+const LESS_IS_BETTER = new Set(["Conceded/90","Goals Allowed/90","G/Sh","G/SoT","Possession Lost/90","Fouls","Offsides","Mistakes Leading to Goal","Possession Lost"]);
+let RUNTIME_LESS_IS_BETTER = new Set(LESS_IS_BETTER);
+const tf = (v, n = 1) => (Number.isFinite(v) ? Number(v).toFixed(n) : "-");
 const clamp100 = (x) => Math.max(0, Math.min(100, x));
 const decileBadge = (pct)=> pct>=90?"Top 10%": pct>=75?"Top 25%": pct>=50?"Top 50%": pct>=25?"Below Median":"Bottom 25%";
 const money = (n) => {
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return "-";
   const sgn = n<0? "-" : "";
   const x = Math.abs(n);
   if (x >= 1e9) return `${sgn}£${(x/1e9).toFixed(2)}b`;
@@ -617,7 +618,7 @@ const money = (n) => {
 const numerify = (v) => {
   if (v === null || v === undefined) return NaN;
   let s = String(v).trim();
-  if (!s || /^[-–—\s]+$/.test(s)) return NaN;
+  if (!s || /^[-–-\s]+$/.test(s)) return NaN;
   s = s.replace(/[$£€]/g,"").replace(/,/g,"").trim();
   const mult = /m\b/i.test(s) ? 1e6 : /k\b/i.test(s) ? 1e3 : 1;
   s = s.replace(/[mk]\b/i,"").replace(/%/,"");
@@ -735,11 +736,11 @@ function evaluateStatFilterGroup(rows, filters, options) {
 }
 
 const CUSTOM_METRIC_OPERATIONS = [
-  { value: "add", label: "A + B" },
-  { value: "subtract", label: "A - B" },
-  { value: "multiply", label: "A * B" },
-  { value: "divide", label: "A / B" },
-  { value: "average", label: "(A + B) / 2" }
+  { value: "add", label: "Add (+)" },
+  { value: "subtract", label: "Subtract (-)" },
+  { value: "multiply", label: "Multiply (×)" },
+  { value: "divide", label: "Divide (/)" },
+  { value: "average", label: "Average (avg)" }
 ];
 
 const CUSTOM_METRIC_SYMBOL = {
@@ -748,6 +749,14 @@ const CUSTOM_METRIC_SYMBOL = {
   multiply: "*",
   divide: "/",
   average: "avg"
+};
+
+const CUSTOM_METRIC_PRECEDENCE = {
+  add: 1,
+  subtract: 1,
+  multiply: 2,
+  divide: 2,
+  average: 2
 };
 
 function applyCustomMetricOperation(operation, a, b) {
@@ -762,6 +771,198 @@ function applyCustomMetricOperation(operation, a, b) {
   }
 }
 
+function normalizeCustomMetricSteps(metric) {
+  const baseMetric = strip(metric?.baseMetric || metric?.metricA || metric?.metric || "");
+  const rawSteps = Array.isArray(metric?.steps) ? metric.steps : [];
+  const steps = rawSteps
+    .map(step => {
+      const operation = CUSTOM_METRIC_OPERATIONS.some(op => op.value === step?.operation || op.value === step?.op)
+        ? (step?.operation || step?.op)
+        : "add";
+      const stepMetric = strip(step?.metric || step?.metricName || step?.value || "");
+      const inputType = step?.inputType === "value" ? "value" : "metric";
+      const groupPrevious = Boolean(step?.groupPrevious || step?.bracketed || step?.brackets || step?.groupWithPrevious);
+      return stepMetric ? { operation, metric: stepMetric, inputType, groupPrevious } : null;
+    })
+    .filter(Boolean);
+
+  if (!steps.length && strip(metric?.metricB || "")) {
+    steps.push({
+      operation: CUSTOM_METRIC_OPERATIONS.some(op => op.value === metric?.operation) ? metric.operation : "add",
+      metric: strip(metric?.metricB || ""),
+      groupPrevious: false
+    });
+  }
+
+  const evaluationMode = metric?.evaluationMode === "bidmas" ? "bidmas" : "ltr";
+
+  return { baseMetric, steps, evaluationMode };
+}
+
+function buildCustomMetricExpression(metric, resolveValue) {
+  const { baseMetric, steps } = normalizeCustomMetricSteps(metric);
+  if (!baseMetric || !Array.isArray(steps) || !steps.length) return null;
+
+  const terms = [resolveValue(baseMetric, null, true, 0)];
+  const operations = [];
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const nextValue = resolveValue(step.metric, step, false, i + 1);
+    if (step.groupPrevious && terms.length) {
+      terms[terms.length - 1] = {
+        type: "group",
+        operation: step.operation,
+        left: terms[terms.length - 1],
+        right: nextValue
+      };
+    } else {
+      operations.push(step.operation);
+      terms.push(nextValue);
+    }
+  }
+
+  return { terms, operations };
+}
+
+function reduceCustomMetricExpression(expression, mode = "ltr") {
+  if (!expression || !Array.isArray(expression.terms) || !expression.terms.length) return null;
+
+  const { terms, operations } = expression;
+  if (!operations.length) return terms[0] || null;
+
+  const valueStack = [terms[0]];
+  const operatorStack = [];
+  const reduceOnce = () => {
+    const operator = operatorStack.pop();
+    const right = valueStack.pop();
+    const left = valueStack.pop();
+    valueStack.push({ type: "op", operation: operator, left, right, precedence: CUSTOM_METRIC_PRECEDENCE[operator] || 1 });
+  };
+
+  if (mode === "ltr") {
+    for (let i = 0; i < operations.length; i++) {
+      valueStack.push(terms[i + 1]);
+      operatorStack.push(operations[i]);
+      reduceOnce();
+    }
+    return valueStack[0] || null;
+  }
+
+  for (let i = 0; i < operations.length; i++) {
+    const operation = operations[i];
+    const nextValue = terms[i + 1];
+    while (operatorStack.length && (CUSTOM_METRIC_PRECEDENCE[operatorStack[operatorStack.length - 1]] || 1) >= (CUSTOM_METRIC_PRECEDENCE[operation] || 1)) {
+      reduceOnce();
+    }
+    operatorStack.push(operation);
+    valueStack.push(nextValue);
+  }
+  while (operatorStack.length) reduceOnce();
+
+  return valueStack[0] || null;
+}
+
+function formatCustomMetricNode(node, parentPrecedence = 0, isRightChild = false) {
+  if (!node) return "?";
+  if (node.type === "value") return node.label || "?";
+  if (node.type === "group") {
+    const left = formatCustomMetricNode(node.left, 99, false);
+    const right = formatCustomMetricNode(node.right, 99, true);
+    if (node.operation === "average") {
+      return `(${(left)} + ${(right)}) / 2`;
+    }
+    const symbol = CUSTOM_METRIC_SYMBOL[node.operation] || "?";
+    return `(${left} ${symbol} ${right})`;
+  }
+  const symbol = CUSTOM_METRIC_SYMBOL[node.operation] || "?";
+  const left = formatCustomMetricNode(node.left, node.precedence, false);
+  const right = formatCustomMetricNode(node.right, node.precedence, true);
+  let raw;
+  if (node.operation === "average") {
+    raw = `(${left} + ${right}) / 2`;
+  } else {
+    raw = `${left} ${symbol} ${right}`;
+  }
+  const needsParens = node.precedence < parentPrecedence || (node.precedence === parentPrecedence && isRightChild);
+  return needsParens ? `(${raw})` : raw;
+}
+
+function evaluateCustomMetricNode(node) {
+  if (!node) return NaN;
+  if (node.type === "value") return Number(node.value);
+  const left = evaluateCustomMetricNode(node.left);
+  const right = evaluateCustomMetricNode(node.right);
+  return applyCustomMetricOperation(node.operation, left, right);
+}
+
+function formatCustomMetricPreview(metric, opts = {}) {
+  const { baseMetric, steps, evaluationMode } = normalizeCustomMetricSteps(metric);
+  const showNames = Boolean(opts.showMetricNames);
+  if (!baseMetric || !steps.length) return "-";
+  const displayFor = (key, fallback) => {
+    const cleaned = strip(key || "");
+    if (!cleaned) return fallback || "?";
+    return LABELS.get(cleaned) || cleaned;
+  };
+  const expression = buildCustomMetricExpression(metric, (_, step, isBase, index = 0) => {
+    if (!step) {
+      return { type: "value", label: showNames ? displayFor(baseMetric, "m1") : "m1" };
+    }
+    if (step?.inputType === "value") {
+      const rawValue = strip(step.metric || "");
+      return { type: "value", label: rawValue || "?", value: Number(rawValue) };
+    }
+    const fallback = `m${index + 1}`;
+    return { type: "value", label: showNames ? (displayFor(step?.metric, fallback) || fallback) : fallback };
+  });
+
+  if (!expression) return "-";
+  const tree = reduceCustomMetricExpression(expression, evaluationMode);
+  return formatCustomMetricNode(tree);
+}
+
+function formatCustomMetricPreviewForStep(metric, stepIdx) {
+  const { baseMetric, steps, evaluationMode } = normalizeCustomMetricSteps(metric);
+  if (!baseMetric || !Array.isArray(steps) || stepIdx < 0) return "-";
+  const sliced = steps.slice(0, stepIdx + 1);
+  return formatCustomMetricPreview({ baseMetric, steps: sliced, evaluationMode }, { showMetricNames: true });
+}
+
+function evaluateCustomMetricFormula(metric, row, customMetricMap, seen = new Set()) {
+  const { baseMetric, steps, evaluationMode } = normalizeCustomMetricSteps(metric);
+  if (!baseMetric || !steps.length) return NaN;
+
+  const metricName = strip(metric?.name || metric?.id || baseMetric);
+  if (seen.has(metricName)) return NaN;
+  const nextSeen = new Set(seen);
+  nextSeen.add(metricName);
+
+  const resolveMetricValue = (name) => {
+    const cleaned = strip(name || "");
+    if (!cleaned) return NaN;
+    const nested = customMetricMap.get(cleaned);
+    if (nested) return evaluateCustomMetricFormula(nested, row, customMetricMap, nextSeen);
+    return numerify(getCell(row, cleaned));
+  };
+
+  const expression = buildCustomMetricExpression(metric, (_, step) => {
+    if (!step) {
+      return { type: "value", value: resolveMetricValue(baseMetric) };
+    }
+    if (step?.inputType === "value") {
+      const n = Number(strip(step.metric || ""));
+      return { type: "value", value: Number.isFinite(n) ? n : NaN };
+    }
+    return { type: "value", value: resolveMetricValue(step?.metric) };
+  });
+  if (!expression) return NaN;
+
+  const tree = reduceCustomMetricExpression(expression, evaluationMode);
+  const result = evaluateCustomMetricNode(tree);
+  return Number.isFinite(result) ? result : NaN;
+}
+
 function normalizeCustomMetrics(metrics) {
   if (!Array.isArray(metrics)) return [];
   const out = [];
@@ -771,17 +972,19 @@ function normalizeCustomMetrics(metrics) {
     if (!name) continue;
     const slug = keyNorm(name);
     if (seen.has(slug)) continue;
-    const metricA = strip(m?.metricA || "");
-    const metricB = strip(m?.metricB || "");
-    if (!metricA || !metricB) continue;
-    const operation = CUSTOM_METRIC_OPERATIONS.some(op => op.value === m?.operation) ? m.operation : "add";
+    const { baseMetric, steps, evaluationMode } = normalizeCustomMetricSteps(m);
+    if (!baseMetric || !steps.length) continue;
     const color = /^#[0-9a-fA-F]{6}$/.test(String(m?.color || "")) ? String(m.color) : "#FF6B6B";
+    const firstStep = steps[0] || null;
     out.push({
       id: strip(m?.id || `cm_${slug}`),
       name,
-      metricA,
-      metricB,
-      operation,
+      baseMetric,
+      steps,
+      evaluationMode,
+      metricA: baseMetric,
+      metricB: firstStep?.metric || "",
+      operation: firstStep?.operation || "add",
       color
     });
     seen.add(slug);
@@ -807,7 +1010,7 @@ function parseOneMoney(s) {
 function parseMoneyRange(str) {
   if (!str) return { lower: NaN, upper: NaN, mid: NaN, raw: "" };
   const raw = String(str).trim();
-  const parts = raw.split(/[-–—]/).map(s => s.trim()).filter(Boolean);
+  const parts = raw.split(/[-–-]/).map(s => s.trim()).filter(Boolean);
   if (parts.length < 2) {
     const v = parseOneMoney(raw);
     return { lower: v, upper: v, mid: v, raw };
@@ -994,7 +1197,7 @@ function normalizeHeadersRowObjects(rows) {
   const isBlankish = (value) => {
     if (value === null || value === undefined) return true;
     const text = String(value).trim();
-    return !text || /^[-–—\s]+$/.test(text) || /^n\/a$/i.test(text) || /^none$/i.test(text);
+    return !text || /^[-–-\s]+$/.test(text) || /^n\/a$/i.test(text) || /^none$/i.test(text);
   };
 
   const pickMergedValue = (existing, incoming) => {
@@ -1025,7 +1228,7 @@ function normalizeHeadersRowObjects(rows) {
     const secondNat = String(o["2nd Nat"] || "").trim();
     const normNat = keyNorm(nat);
     const normSecond = keyNorm(secondNat);
-    if (!secondNat || /^[-–—\s]+$/.test(secondNat) || /^none$/i.test(secondNat) || /^n\/a$/i.test(secondNat) || (normSecond && normSecond === normNat)) {
+    if (!secondNat || /^[-–-\s]+$/.test(secondNat) || /^none$/i.test(secondNat) || /^n\/a$/i.test(secondNat) || (normSecond && normSecond === normNat)) {
       o["2nd Nat"] = "";
     }
     return o;
@@ -1107,8 +1310,13 @@ function isPrimaryStrikerPosition(posStr) {
 
 /* ===================== Role Book (expanded) ===================== */
 const ROLE_BOOK = {
+  // ---- Overall ----
+  "Overall": {
+    baseline: []
+  },
+
   // ---- Goalkeepers ----
-  "GK — Shot Stopper": {
+  "GK - Shot Stopper": {
     baseline: ["GK"],
     weights: {
       "Expected Goals Prevented/90": 1.7,
@@ -1116,7 +1324,7 @@ const ROLE_BOOK = {
       "Conceded/90": 1.2, "Clean Sheets/90": 0.9
     }
   },
-  "GK — Sweeper Keeper": {
+  "GK - Sweeper Keeper": {
     baseline: ["GK"],
     weights: {
       "Passes Attempted/90": 1.2, "Passes Completed/90": 0.9, "Pass Completion%": 0.9,
@@ -1125,7 +1333,7 @@ const ROLE_BOOK = {
   },
 
   // ---- Centre-backs ----
-  "CB — Stopper": {
+  "CB - Stopper": {
     baseline: ["D (C)"],
     weights: {
       "Tackles/90": 1.5, "Tackle Ratio": 1.2,
@@ -1133,7 +1341,7 @@ const ROLE_BOOK = {
       "Clearances/90": 1.0, "Headers won/90": 1.1, "Header Win Rate": 1.1
     }
   },
-  "CB — Ball Playing": {
+  "CB - Ball Playing": {
     baseline: ["D (C)"],
     weights: {
       "Passes Attempted/90": 1.4, "Passes Completed/90": 1.2, "Pass Completion%": 1.1,
@@ -1143,7 +1351,7 @@ const ROLE_BOOK = {
   },
 
   // ---- Full-backs / Wing-backs ----
-  "FB — Overlapping": {
+  "FB - Overlapping": {
     baseline: ["D (R)","D (L)","WB (R)","WB (L)"],
     weights: {
       "Crosses Attempted/90": 1.4, "Crosses Completed/90": 1.6, "Cross Completion Ratio": 1.2,
@@ -1152,7 +1360,7 @@ const ROLE_BOOK = {
       "Tackles/90": 1.0, "Interceptions/90": 1.0
     }
   },
-  "FB — Inverted": {
+  "FB - Inverted": {
     baseline: ["D (R)","D (L)","WB (R)","WB (L)"],
     weights: {
       "Passes Attempted/90": 1.3, "Passes Completed/90": 1.3, "Pass Completion%": 1.4,
@@ -1162,7 +1370,7 @@ const ROLE_BOOK = {
   },
 
   // ---- Defensive Midfield ----
-  "DM — Ball Winner": {
+  "DM - Ball Winner": {
     baseline: ["DM"],
     weights: {
       "Tackles/90": 1.6, "Tackle Ratio": 1.3,
@@ -1170,7 +1378,7 @@ const ROLE_BOOK = {
       "Possession Won/90": 1.5, "Pressures Completed/90": 1.2
     }
   },
-  "DM — Deep-Lying Playmaker": {
+  "DM - Deep-Lying Playmaker": {
     baseline: ["DM"],
     weights: {
       "Passes Attempted/90": 1.6, "Passes Completed/90": 1.3, "Pass Completion%": 1.3,
@@ -1180,7 +1388,7 @@ const ROLE_BOOK = {
   },
 
   // ---- Central Midfield ----
-  "CM — Box to Box": {
+  "CM - Box to Box": {
     baseline: ["M (C)"],
     weights: {
       "Progressive Passes/90": 1.4, "OP Key Passes/90": 1.2, "Dribbles/90": 1.2,
@@ -1188,7 +1396,7 @@ const ROLE_BOOK = {
       "Shots/90": 1.1, "SoT/90": 1.1
     }
   },
-  "CM — Progresser": {
+  "CM - Progresser": {
     baseline: ["M (C)"],
     weights: {
       "Progressive Passes/90": 1.7, "Passes Completed/90": 1.3, "Passes Attempted/90": 1.4,
@@ -1198,7 +1406,7 @@ const ROLE_BOOK = {
   },
 
   // ---- Attacking Midfield ----
-  "AM — Classic 10": {
+  "AM - Classic 10": {
     baseline: ["AM (C)"],
     weights: {
       "OP Key Passes/90": 1.7, "Key Passes/90": 1.6, "Chances Created/90": 1.7,
@@ -1206,7 +1414,7 @@ const ROLE_BOOK = {
       "Shots/90": 1.0
     }
   },
-  "AM — Shadow Striker": {
+  "AM - Shadow Striker": {
     baseline: ["AM (C)"],
     weights: {
       "Shots/90": 1.5, "SoT/90": 1.5, "Dribbles/90": 1.1,
@@ -1216,7 +1424,7 @@ const ROLE_BOOK = {
   },
 
   // ---- Wingers ----
-  "Winger — Classic": {
+  "Winger - Classic": {
     baseline: ["AM (R)","AM (L)","M (R)","M (L)"],
     weights: {
       "Crosses Attempted/90": 1.4, "Crosses Completed/90": 1.6, "Cross Completion Ratio": 1.3,
@@ -1224,7 +1432,7 @@ const ROLE_BOOK = {
       "OP Key Passes/90": 1.4, "Dribbles/90": 1.6, "Assist": 1.5
     }
   },
-  "Winger — Inverted": {
+  "Winger - Inverted": {
     baseline: ["AM (R)","AM (L)","M (R)","M (L)"],
     weights: {
       "Shots/90": 1.6, "SoT/90": 1.6, "Dribbles/90": 1.6,
@@ -1234,14 +1442,14 @@ const ROLE_BOOK = {
   },
 
   // ---- Strikers ----
-  "ST — Poacher": {
+  "ST - Poacher": {
     baseline: ["ST","ST (C)"],
     weights: {
       "Shots/90": 1.6, "SoT/90": 1.7, "Conversion Rate": 1.7,
       "Goals / 90": 1.9, "xG/90": 1.7
     }
   },
-  "ST — Target Man": {
+  "ST - Target Man": {
     baseline: ["ST","ST (C)"],
     weights: {
       "Headers won/90": 1.8, "Header Win Rate": 1.7, "Aerial Duels Attempted/90": 1.6,
@@ -1249,7 +1457,7 @@ const ROLE_BOOK = {
       "Goals / 90": 1.4
     }
   },
-  "ST — Pressing Forward": {
+  "ST - Pressing Forward": {
     baseline: ["ST","ST (C)"],
     weights: {
       "Pressures Completed/90": 2.6,
@@ -1260,7 +1468,7 @@ const ROLE_BOOK = {
       "Goals / 90": 1.9
     }
   },
-  "ST — False 9": {
+  "ST - False 9": {
     baseline: ["ST","ST (C)"],
     weights: {
       "OP Key Passes/90": 1.7, "Key Passes/90": 1.5, "Chances Created/90": 1.6,
@@ -1268,13 +1476,13 @@ const ROLE_BOOK = {
       "Shots/90": 1.1, "SoT/90": 1.1, "Goals / 90": 1.3,
       "xA/90": 1.4
     }
-  }
+}
 };
 
-const ROLE_STATS = Object.fromEntries(Object.entries(ROLE_BOOK).map(([r,e]) => [r, Object.keys(e.weights)]));
+const ROLE_STATS = Object.fromEntries(Object.entries(ROLE_BOOK).map(([r,e]) => [r, Object.keys((e && e.weights) ? e.weights : {})]));
 const ROLE_WEIGHTS = Object.fromEntries(Object.entries(ROLE_BOOK).map(([r,e]) => [r, e.weights]));
 const ROLE_BASELINES = Object.fromEntries(Object.entries(ROLE_BOOK).map(([r,e]) => [r, e.baseline || []]));
-const ALL_ROLE_STATS = Array.from(new Set(Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights))));
+const ALL_ROLE_STATS = Array.from(new Set(Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights || {}))));
 
 /* ===================== Percentiles ===================== */
 function getCell(obj, name) {
@@ -1352,7 +1560,7 @@ function percentileFor(pctIndex, stat, value) {
   const resolvedStat = resolveStatKey(stat, pctIndex);
   const arrAsc = pctIndex.get(resolvedStat) || [];
   if (!arrAsc.length || !Number.isFinite(value)) return NaN;
-  const less = LESS_IS_BETTER.has(resolvedStat) || LESS_IS_BETTER.has(stat);
+  const less = RUNTIME_LESS_IS_BETTER.has(resolvedStat) || RUNTIME_LESS_IS_BETTER.has(stat);
   let l = 0, r = arrAsc.length;
   while (l < r) { const m = (l + r) >> 1; if (arrAsc[m] < value) l = m + 1; else r = m; }
   const lo = l; l = 0; r = arrAsc.length;
@@ -1385,7 +1593,7 @@ function roleScoreFor(row, roleName, pctIndex, rolePctByRole = null) {
     sum += penaltyPct * w;
   }
   let score = posW > 0 ? (sum / posW) : 0;
-  if (typeof roleName === "string" && roleName.startsWith("ST —") && !isPrimaryStrikerPosition(getCell(row, "Pos"))) {
+  if (typeof roleName === "string" && roleName.startsWith("ST -") && !isPrimaryStrikerPosition(getCell(row, "Pos"))) {
     score -= 20;
   }
   return clamp100(score);
@@ -2144,7 +2352,7 @@ function HBar({ items, titleFmt=(v)=>`${v}%`, valueMax=100 }) {
     const tip = tipRef.current;
     const bars = g.append("g").selectAll("rect").data(data).enter().append("rect")
       .attr("x", 0).attr("y", d=>y(d.label)).attr("height", y.bandwidth()).attr("width", 0).attr("fill", "var(--accent)")
-      .on("mousemove",(e,d)=> tip?.show(e, `<div class="t-card"><div class="t-title">${d.label}${d.extra?` — ${d.extra}`:""}</div><div class="t-row"><span>Value</span><b>${titleFmt(d.value)}</b></div></div>`))
+      .on("mousemove",(e,d)=> tip?.show(e, `<div class="t-card"><div class="t-title">${d.label}${d.extra?` - ${d.extra}`:""}</div><div class="t-row"><span>Value</span><b>${titleFmt(d.value)}</b></div></div>`))
       .on("mouseleave",()=>tip?.hide());
     bars.transition().duration(650).attr("width", d=>x(d.value)).attr("rx", 9);
     g.selectAll("text.value").data(data).enter().append("text")
@@ -2704,7 +2912,7 @@ export default function App(){
   const [roleX, setRoleX] = useStickyState("scatter:roleX", Object.keys(ROLE_STATS)[0] || "");
   const [roleY, setRoleY] = useStickyState("scatter:roleY", Object.keys(ROLE_STATS)[1] || Object.keys(ROLE_STATS)[0] || "");
 
-  const allStats = useMemo(()=> Array.from(new Set([ ...Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights)) ])), []);
+  const allStats = useMemo(()=> Array.from(new Set([ ...Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights || {})) ])), []);
   const [scatterMetricScope, setScatterMetricScope] = useStickyState("scatter:metricScope", "All Database Metrics");
   const [scatterRowScope, setScatterRowScope] = useStickyState("scatter:rowScope", "All Loaded");
   const [customMetricsStore, setCustomMetricsStore] = useStickyState("custom:metrics", []);
@@ -2765,22 +2973,35 @@ export default function App(){
     return m;
   }, [customMetrics]);
 
-  const metricValue = useCallback((row, metricName) => {
+  useEffect(() => {
+    const s = new Set(LESS_IS_BETTER);
+    for (const cm of customMetrics) {
+      if (cm && cm.lessIsBetter) s.add(cm.name);
+    }
+    RUNTIME_LESS_IS_BETTER = s;
+  }, [customMetrics]);
+
+  const metricValue = useCallback((row, metricName, seen = new Set()) => {
     const cm = customMetricMap.get(metricName);
     if (!cm) return numerify(getCell(row, metricName));
-    const a = numerify(getCell(row, cm.metricA));
-    const b = numerify(getCell(row, cm.metricB));
-    return applyCustomMetricOperation(cm.operation, a, b);
+    return evaluateCustomMetricFormula(cm, row, customMetricMap, seen);
   }, [customMetricMap]);
 
   const [statX, setStatX] = useStickyState("scatter:statX", "");
   const [statY, setStatY] = useStickyState("scatter:statY", "");
 
   const [cmName, setCmName] = useState("");
-  const [cmMetricA, setCmMetricA] = useState("");
-  const [cmMetricB, setCmMetricB] = useState("");
-  const [cmOperation, setCmOperation] = useState("add");
+  const [cmBaseMetric, setCmBaseMetric] = useState("");
+  const [cmSteps, setCmSteps] = useState([{ operation: "add", metric: "", inputType: "metric", groupPrevious: false }]);
+  const [cmEditId, setCmEditId] = useState(null);
+  const [cmEvaluationMode, setCmEvaluationMode] = useState("ltr");
   const [cmColor, setCmColor] = useState("#FF6B6B");
+  const [cmLessIsBetter, setCmLessIsBetter] = useState(false);
+
+  const cmNameInputRef = useRef(null);
+
+  const [customName, setCustomName] = useState("Custom Archetype");
+  const customNameInputRef = useRef(null);
 
   const addStatFilter = useCallback(() => {
     const fallbackStat = metricBuilderOptions.includes("Goals")
@@ -2855,7 +3076,6 @@ export default function App(){
   const [compScope, setCompScope] = useStickyState("comp:scope", "Filtered Cohort");
 
   /* ---------- Custom archetype ---------- */
-  const [customName, setCustomName] = useState("Custom Archetype");
   const [customBaseline, setCustomBaseline] = useStickyState("custom:baseline", ["M (C)"]);
   const [customWeights, setCustomWeights] = useStickyState("custom:weights", { "Progressive Passes/90": 1.4, "Key Passes/90": 1.2, "Dribbles/90": 1.2 });
 
@@ -3041,13 +3261,17 @@ export default function App(){
 
   useEffect(() => {
     if (!metricBuilderOptions.length) return;
-    if (!metricBuilderOptions.includes(cmMetricA)) {
-      setCmMetricA(metricBuilderOptions[0]);
-    }
-    if (!metricBuilderOptions.includes(cmMetricB)) {
-      setCmMetricB(metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0]);
-    }
-  }, [metricBuilderOptions, cmMetricA, cmMetricB]);
+    setCmBaseMetric(prev => metricBuilderOptions.includes(prev) ? prev : metricBuilderOptions[0]);
+    setCmSteps(prev => {
+      const seed = Array.isArray(prev) && prev.length ? prev : [{ operation: "add", metric: metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0] }];
+      return seed.map((step, idx) => ({
+        operation: CUSTOM_METRIC_OPERATIONS.some(op => op.value === step?.operation) ? step.operation : "add",
+        metric: metricBuilderOptions.includes(step?.metric)
+          ? step.metric
+          : (metricBuilderOptions[Math.min(idx + 1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0])
+      }));
+    });
+  }, [metricBuilderOptions]);
 
   useEffect(() => {
     if (!scatterStatOptions.length) return;
@@ -3059,37 +3283,159 @@ export default function App(){
     }
   }, [scatterStatOptions, statX, statY, setStatX, setStatY]);
 
+  const commitCmName = useCallback(() => {
+    const next = strip(cmNameInputRef.current?.value ?? cmName);
+    setCmName(next);
+    return next;
+  }, [cmName]);
+
+  const commitCustomName = useCallback(() => {
+    const next = strip(customNameInputRef.current?.value ?? customName) || "Custom Archetype";
+    setCustomName(next);
+    return next;
+  }, [customName]);
+
   const addCustomMetric = useCallback(() => {
-    const name = strip(cmName);
+    const name = commitCmName();
     if (!name) {
       alert("Enter a custom metric name first.");
       return;
     }
-    if (!cmMetricA || !cmMetricB) {
-      alert("Pick two source metrics first.");
+    const baseMetric = strip(cmBaseMetric);
+    const steps = (Array.isArray(cmSteps) ? cmSteps : [])
+      .map(step => ({
+        operation: CUSTOM_METRIC_OPERATIONS.some(op => op.value === step?.operation) ? step.operation : "add",
+        metric: strip(step?.metric || ""),
+        inputType: step?.inputType === "value" ? "value" : "metric",
+        groupPrevious: Boolean(step?.groupPrevious)
+      }))
+      .filter(step => step.metric);
+    if (!baseMetric) {
+      alert("Pick a base metric first.");
+      return;
+    }
+    if (!steps.length) {
+      alert("Add at least one operation step first.");
       return;
     }
     const reserved = new Set(metricBuilderOptions.map(s => keyNorm(s)));
-    if (reserved.has(keyNorm(name)) || customMetrics.some(m => keyNorm(m.name) === keyNorm(name))) {
-      alert("That metric name already exists. Please choose a unique name.");
-      return;
+    const existing = customMetrics.find(m => keyNorm(m.name) === keyNorm(name));
+    if (!cmEditId) {
+      if (reserved.has(keyNorm(name))) {
+        alert("That metric name conflicts with an existing dataset metric. Please choose a different name.");
+        return;
+      }
+      if (existing) {
+        const ok = window.confirm(`A custom metric named "${existing.name}" already exists. Overwrite it?`);
+        if (!ok) return;
+        // Overwrite the existing metric
+        setCustomMetrics(prev => prev.map(m => {
+          if (keyNorm(m.name) !== keyNorm(name)) return m;
+          return {
+            ...m,
+            name,
+            baseMetric,
+            steps,
+            evaluationMode: cmEvaluationMode,
+            metricA: baseMetric,
+            metricB: steps[0]?.metric || "",
+            operation: steps[0]?.operation || "add",
+            color: cmColor
+          };
+        }));
+      } else {
+        const created = normalizeCustomMetrics([{
+          id: `cm_${Date.now()}`,
+          name,
+          baseMetric,
+          steps,
+          lessIsBetter: Boolean(cmLessIsBetter),
+          evaluationMode: cmEvaluationMode,
+          metricA: baseMetric,
+          metricB: steps[0]?.metric || "",
+          operation: steps[0]?.operation || "add",
+          color: cmColor
+        }]);
+        if (!created.length) return;
+        setCustomMetrics(prev => [...prev, created[0]]);
+      }
+    } else {
+      // Saving edits to an existing metric
+      if (existing && existing.id !== cmEditId) {
+        const ok = window.confirm(`A different custom metric named "${existing.name}" already exists. Overwrite it with your changes?`);
+        if (!ok) return;
+        // Overwrite the other metric with these contents and remove the original being edited
+        setCustomMetrics(prev => {
+          return prev.flatMap(m => {
+            if (m.id === existing.id) {
+              return [{
+                ...m,
+                name,
+                baseMetric,
+                steps,
+                evaluationMode: cmEvaluationMode,
+                metricA: baseMetric,
+                metricB: steps[0]?.metric || "",
+                operation: steps[0]?.operation || "add",
+                color: cmColor
+              }];
+            }
+            if (m.id === cmEditId) return [];
+            return [m];
+          });
+        });
+      } else {
+        // Normal edit save
+        setCustomMetrics(prev => prev.map(m => {
+          if (m.id !== cmEditId) return m;
+            return {
+            ...m,
+            name,
+            baseMetric,
+            steps,
+            lessIsBetter: Boolean(cmLessIsBetter),
+            evaluationMode: cmEvaluationMode,
+            metricA: baseMetric,
+            metricB: steps[0]?.metric || "",
+            operation: steps[0]?.operation || "add",
+            color: cmColor
+          };
+        }));
+      }
     }
-    const created = normalizeCustomMetrics([{
-      id: `cm_${Date.now()}`,
-      name,
-      metricA: cmMetricA,
-      metricB: cmMetricB,
-      operation: cmOperation,
-      color: cmColor
-    }]);
-    if (!created.length) return;
-    setCustomMetrics(prev => [...prev, created[0]]);
+    // Clear editor state
     setCmName("");
-  }, [cmName, cmMetricA, cmMetricB, cmOperation, cmColor, metricBuilderOptions, customMetrics, setCustomMetrics]);
+    setCmBaseMetric(metricBuilderOptions[0] || "");
+    setCmSteps([{ operation: "add", metric: metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false }]);
+    setCmLessIsBetter(false);
+    setCmEvaluationMode("ltr");
+    setCmEditId(null);
+  }, [commitCmName, cmBaseMetric, cmSteps, cmColor, cmEvaluationMode, metricBuilderOptions, customMetrics, setCustomMetrics]);
 
   const removeCustomMetric = useCallback((metricName) => {
     setCustomMetrics(prev => prev.filter(m => m.name !== metricName));
   }, [setCustomMetrics]);
+
+  const startEditMetric = useCallback((m) => {
+    setCmEditId(m.id || null);
+    setCmName(m.name || "");
+    setCmColor(m.color || "#FF6B6B");
+    setCmBaseMetric(m.baseMetric || (metricBuilderOptions[0] || ""));
+    setCmEvaluationMode(m.evaluationMode || "ltr");
+    // steps from metric already contain operation, metric, inputType
+    setCmSteps(Array.isArray(m.steps) ? m.steps.map(s => ({ operation: s.operation || "add", metric: s.metric || "", inputType: s.inputType || "metric", groupPrevious: Boolean(s.groupPrevious) })) : []);
+    setCmLessIsBetter(Boolean(m.lessIsBetter));
+  }, [metricBuilderOptions]);
+
+  const cancelEdit = useCallback(() => {
+    setCmEditId(null);
+    setCmName("");
+    setCmColor("#FF6B6B");
+    setCmBaseMetric(metricBuilderOptions[0] || "");
+    setCmSteps([{ operation: "add", metric: metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false }]);
+    setCmLessIsBetter(false);
+    setCmEvaluationMode("ltr");
+  }, [metricBuilderOptions]);
 
   const exportCustomMetrics = useCallback(() => {
     if (!customMetrics.length) {
@@ -3100,11 +3446,14 @@ export default function App(){
       version: "1.0",
       metrics: customMetrics
     };
+    const suggested = "custom_metrics.json";
+    const name = String(prompt("Export filename:", suggested) || suggested).trim() || suggested;
+    const filename = name.endsWith(".json") ? name : `${name}.json`;
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "custom_metrics.json";
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   }, [customMetrics]);
@@ -3118,8 +3467,13 @@ export default function App(){
       try {
         const parsed = JSON.parse(String(evt.target?.result || "{}"));
         const incoming = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.metrics) ? parsed.metrics : []);
-        const normalized = normalizeCustomMetrics(incoming)
-          .filter(m => metricBuilderOptions.includes(m.metricA) && metricBuilderOptions.includes(m.metricB));
+        const normalizedCandidates = normalizeCustomMetrics(incoming);
+        const importableMetricNames = new Set([
+          ...metricBuilderOptions.map(keyNorm),
+          ...normalizedCandidates.map(m => keyNorm(m.name))
+        ]);
+        const normalized = normalizedCandidates
+          .filter(m => metricBuilderOptions.includes(m.baseMetric) && Array.isArray(m.steps) && m.steps.every(step => step?.inputType === "value" || importableMetricNames.has(keyNorm(step.metric))));
         if (!normalized.length) {
           alert("No valid custom metrics found in that file.");
           return;
@@ -3396,9 +3750,9 @@ export default function App(){
 
     const mins = numerify(r["Minutes"]);
     const age  = numerify(r["Age"]);
-    const pos  = r["Pos"] || "—";
-    const club = r["Club"] || "—";
-    const league = r["League"] || "—";
+    const pos  = r["Pos"] || "-";
+    const club = r["Club"] || "-";
+    const league = r["League"] || "-";
 
     const goals   = Number.isFinite(numerify(r["Goals"])) ? numerify(r["Goals"]) : numerify(r["Gls"]);
     const assists = Number.isFinite(numerify(r["Assist"])) ? numerify(r["Assist"]) : numerify(r["Assists"]);
@@ -3406,17 +3760,17 @@ export default function App(){
     const gameValRaw = getCell(r,"Transfer Value");
     const gameValMid = parseMoneyRange(gameValRaw).mid;
     const avgRating = numerify(getCell(r, "Avg Rating") || getCell(r, "Av Rat") || getCell(r, "Rating"));
-    const wage = getCell(r, "Wage") || "—";
-    const height = getCell(r, "Height") || "—";
-    const weight = getCell(r, "Weight") || "—";
-    const preferredFoot = getCell(r, "Preferred Foot") || "—";
-    const homeGrown = getCell(r, "Home-Grown Status") || "—";
+    const wage = getCell(r, "Wage") || "-";
+    const height = getCell(r, "Height") || "-";
+    const weight = getCell(r, "Weight") || "-";
+    const preferredFoot = getCell(r, "Preferred Foot") || "-";
+    const homeGrown = getCell(r, "Home-Grown Status") || "-";
     const nat = getCell(r, "Nat") || "";
     const secondNatRaw = getCell(r, "2nd Nat") || "";
     const normalizeNat = (v) => keyNorm(String(v || ""));
     const sanitizeSecondNat = (v) => {
       const t = String(v || "").trim();
-      if (!t || /^[-–—\s]+$/.test(t) || /^none$/i.test(t) || /^n\/a$/i.test(t)) return "";
+      if (!t || /^[-–-\s]+$/.test(t) || /^none$/i.test(t) || /^n\/a$/i.test(t)) return "";
       if (normalizeNat(t) === normalizeNat(nat)) return "";
       return t;
     };
@@ -3428,16 +3782,16 @@ export default function App(){
 
     const profilePills = [
       nat ? `Nat: ${nat}` : null,
-      preferredFoot !== "—" ? `Foot: ${preferredFoot}` : null,
-      info && info !== "—" ? `${info}` : null,
+      preferredFoot !== "-" ? `Foot: ${preferredFoot}` : null,
+      info && info !== "-" ? `${info}` : null,
       bestRole ? `Best Role: ${bestRole}` : null,
       Number.isFinite(bestScore) ? `Best Score: ${bestScore.toFixed(2)}` : null,
       currentProfileRole ? `Pizza Role: ${currentProfileRole}` : null,
       Number.isFinite(currentProfileRoleScore) ? `Pizza Score: ${currentProfileRoleScore.toFixed(2)}` : null,
       Number.isFinite(age) ? `Age: ${tf(age,0)}` : null,
-      height && height !== "—" ? `Height: ${height}` : null,
-      weight && weight !== "—" ? `Weight: ${weight}` : null,
-      wage && wage !== "—" ? `Wage: ${wage}` : null,
+      height && height !== "-" ? `Height: ${height}` : null,
+      weight && weight !== "-" ? `Weight: ${weight}` : null,
+      wage && wage !== "-" ? `Wage: ${wage}` : null,
       Number.isFinite(mins) ? `Minutes: ${tf(mins,0)}` : null,
       Number.isFinite(goals) ? `Goals: ${tf(goals,0)}` : null,
       Number.isFinite(assists) ? `Assists: ${tf(assists,0)}` : null,
@@ -3445,7 +3799,7 @@ export default function App(){
       Number.isFinite(gameValMid) ? `Game Value: ${money(gameValMid)}` : (gameValRaw ? `Game Value: ${gameValRaw}` : null),
       contractInfo?.status ? `Contract: ${contractInfo.status}` : null,
       Number.isFinite(contractInfo?.multiplier) ? `Value Impact: ${(contractInfo.multiplier * 100).toFixed(0)}%` : null,
-      homeGrown && homeGrown !== "—" ? `Home-Grown: ${homeGrown}` : null
+      homeGrown && homeGrown !== "-" ? `Home-Grown: ${homeGrown}` : null
     ].filter(Boolean);
 
     const categorizeStatKey = (statName) => {
@@ -3470,7 +3824,7 @@ export default function App(){
 
     const formatProfileStatValue = (statName, rawValue) => {
       const text = String(rawValue ?? "").trim();
-      if (!text) return "—";
+      if (!text) return "-";
       if (typeof rawValue === "string" && /[€£$]/.test(rawValue)) return text;
       const n = numerify(rawValue);
       if (!Number.isFinite(n)) return text;
@@ -3578,7 +3932,7 @@ export default function App(){
             </div>
             <div className="cardBody" style={{padding: "16px", display: "flex", flexDirection: "column", alignItems: "center"}}>
               <div style={{fontSize: "12px", color: "var(--muted)", marginBottom: "16px"}}>
-                {player} — {currentProfileRole}
+                {player} - {currentProfileRole}
               </div>
               <div style={{width: "600px", height: "600px"}}>
                 <Pizza 
@@ -3628,7 +3982,7 @@ export default function App(){
           {/* Role Matrix - Full Width but Compact */}
           <div className="card">
             <div className="cardHead" style={{padding: "8px 12px", gap: 8, flexWrap: "wrap"}}>
-              <div style={{fontWeight:800, fontSize: "14px"}}>Role Matrix — {roleMatrixForProfile.rx} vs {roleMatrixForProfile.ry}</div>
+              <div style={{fontWeight:800, fontSize: "14px"}}>Role Matrix - {roleMatrixForProfile.rx} vs {roleMatrixForProfile.ry}</div>
               <div style={{display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap"}}>
                 <select className="input" style={{minWidth: 190, padding: "7px 10px"}} value={matrixRoleA} onChange={e => setProfileMatrixRoleA(e.target.value)}>
                   {Object.keys(ROLE_BOOK).map(roleName => <option key={roleName} value={roleName}>{roleName}</option>)}
@@ -3715,7 +4069,7 @@ export default function App(){
     if (!r) return <div className="card"><div className="cardBody">Select a player</div></div>;
     const stats = ROLE_STATS[role] || [];
     const series = [{
-      name: `${player} — ${role}`,
+      name: `${player} - ${role}`,
       color: "var(--accent)",
       slices: stats.map(st => {
         const raw = numerify(getCell(r, st));
@@ -3726,7 +4080,7 @@ export default function App(){
     return (
       <div className="card">
         <div className="cardHead" style={{gap:12}}>
-          <div style={{fontWeight:800, fontSize: "1.1em"}}>Radar Chart — {player}</div>
+          <div style={{fontWeight:800, fontSize: "1.1em"}}>Radar Chart - {player}</div>
           <select className="input" style={{minWidth:200}} value={role} onChange={e=>setRole(e.target.value)}>
             {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
           </select>
@@ -3753,7 +4107,7 @@ export default function App(){
     return (
       <div className="card">
         <div className="cardHead">
-          <div style={{fontWeight:800, fontSize: "1.1em"}}>Percentiles — {player}</div>
+          <div style={{fontWeight:800, fontSize: "1.1em"}}>Percentiles - {player}</div>
           <div className="badge">vs {compScope}</div>
         </div>
         <div className="cardBody">
@@ -3771,7 +4125,7 @@ export default function App(){
                 {pairs.map(pair => (
                   <tr key={pair.stat}>
                     <td>{LABELS.get(pair.stat) || pair.stat}</td>
-                    <td>{Number.isFinite(pair.raw) ? tf(pair.raw, 2) : "—"}</td>
+                    <td>{Number.isFinite(pair.raw) ? tf(pair.raw, 2) : "-"}</td>
                     <td>{tf(pair.pct, 1)}%</td>
                     <td>{decileBadge(pair.pct)}</td>
                   </tr>
@@ -3788,7 +4142,7 @@ export default function App(){
     return (
       <div className="card">
         <div className="cardHead" style={{gap:12}}>
-          <div style={{fontWeight:800, fontSize: "1.1em"}}>Role Matrix — {roleX} vs {roleY}</div>
+              <div style={{fontWeight:800, fontSize: "1.1em"}}>Role Matrix - {roleX} vs {roleY}</div>
           <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
             <select className="input" style={{minWidth:200}} value={roleX} onChange={e=>setRoleX(e.target.value)}>
               {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
@@ -3815,19 +4169,18 @@ export default function App(){
 
   function StatScatterMode(){
     const renderFormula = (m) => {
-      if (m.operation === "average") return `avg(${m.metricA}, ${m.metricB})`;
-      return `${m.metricA} ${CUSTOM_METRIC_SYMBOL[m.operation] || "?"} ${m.metricB}`;
+      return formatCustomMetricPreview(m);
     };
 
     return (
       <div className="card">
         <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
-          <div style={{fontWeight:800, fontSize: "1.1em"}}>Stat Scatter — {LABELS.get(statX)||statX} vs {LABELS.get(statY)||statY}</div>
+          <div style={{fontWeight:800, fontSize: "1.1em"}}>Stat Scatter - {LABELS.get(statX)||statX} vs {LABELS.get(statY)||statY}</div>
           <div className="badge">{scatterStatOptions.length} stats</div>
           <div className="badge">{statScatterPoints.length} players</div>
         </div>
         <div className="cardBody" style={{display:"flex", flexDirection:"column", gap:12}}>
-          <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+            <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
             <div className="col" style={{minWidth:220}}>
               <label className="lbl">Data rows</label>
               <select className="input" value={scatterRowScope} onChange={e=>setScatterRowScope(e.target.value)}>
@@ -3877,8 +4230,28 @@ export default function App(){
 
   function CustomMetricsMode(){
     const renderFormula = (m) => {
-      if (m.operation === "average") return `avg(${m.metricA}, ${m.metricB})`;
-      return `${m.metricA} ${CUSTOM_METRIC_SYMBOL[m.operation] || "?"} ${m.metricB}`;
+      return formatCustomMetricPreview(m);
+    };
+
+    const addMetricStep = () => {
+      const pick = metricBuilderOptions.find(metric => metric !== cmBaseMetric && !cmSteps.some(step => step.metric === metric));
+      setCmSteps(prev => [...prev, { operation: "add", metric: pick || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false }]);
+    };
+
+    const updateMetricStep = (idx, patch) => {
+      setCmSteps(prev => {
+        const base = Array.isArray(prev) ? [...prev] : [];
+        if (!base[idx]) return base;
+        base[idx] = { ...base[idx], ...patch };
+        return base;
+      });
+    };
+
+    const removeMetricStep = (idx) => {
+      setCmSteps(prev => {
+        const base = Array.isArray(prev) ? prev : [];
+        return base.filter((_, i) => i !== idx);
+      });
     };
 
     return (
@@ -3886,12 +4259,15 @@ export default function App(){
         <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
           <div style={{fontWeight:800, fontSize: "1.1em"}}>Custom Metrics</div>
           <div className="badge">{customMetrics.length} defined</div>
-          <div style={{marginLeft:"auto", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+            <div style={{marginLeft:"auto", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
             <button className="btn ghost tight" onClick={exportCustomMetrics}>Export JSON</button>
             <label className="btn ghost tight" style={{cursor:"pointer"}}>
               Import JSON
               <input type="file" accept=".json" onChange={importCustomMetrics} style={{display:"none"}} />
             </label>
+            {cmEditId ? (
+              <button className="btn" onClick={cancelEdit}>Cancel Edit</button>
+            ) : null}
           </div>
         </div>
         <div className="cardBody" style={{display:"flex", flexDirection:"column", gap:12}}>
@@ -3902,34 +4278,122 @@ export default function App(){
                 className="input"
                 type="text"
                 autoComplete="off"
-                value={cmName}
-                onChange={e=>setCmName(e.target.value)}
+                ref={cmNameInputRef}
+                defaultValue={cmName}
+                key={cmEditId || "cm-new"}
+                onBlur={() => setCmName(commitCmName())}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    setCmName(commitCmName());
+                    e.currentTarget.blur();
+                  }
+                }}
                 placeholder="e.g. Aggression Balance"
               />
-            </div>
-            <div className="col" style={{minWidth:180}}>
-              <label className="lbl">Metric A</label>
-              <select className="input" value={cmMetricA} onChange={e=>setCmMetricA(e.target.value)}>
-                {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
-              </select>
-            </div>
-            <div style={{width:150}}>
-              <label className="lbl">Operation</label>
-              <select className="input" value={cmOperation} onChange={e=>setCmOperation(e.target.value)}>
-                {CUSTOM_METRIC_OPERATIONS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
-              </select>
-            </div>
-            <div className="col" style={{minWidth:180}}>
-              <label className="lbl">Metric B</label>
-              <select className="input" value={cmMetricB} onChange={e=>setCmMetricB(e.target.value)}>
-                {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
-              </select>
             </div>
             <div style={{width:120}}>
               <label className="lbl">Color</label>
               <input className="input" type="color" value={cmColor} onChange={e=>setCmColor(e.target.value)} />
             </div>
-            <button className="btn" onClick={addCustomMetric}>Add Metric</button>
+            <div style={{display:"flex", alignItems:"center", gap:8}}>
+              <button
+                type="button"
+                className={`segBtn ${cmLessIsBetter ? "active" : ""}`}
+                onClick={() => setCmLessIsBetter(prev => !prev)}
+                title="Mark this custom metric as 'less is better'"
+              >
+                Less is better
+              </button>
+            </div>
+            {cmEditId ? (
+              <div style={{display:"flex", gap:8}}>
+                <button className="btn" type="button" onClick={addCustomMetric}>Save</button>
+                <button className="btn ghost" type="button" onClick={cancelEdit}>Cancel</button>
+              </div>
+            ) : (
+              <button className="btn" type="button" onClick={addCustomMetric}>Add Metric</button>
+            )}
+          </div>
+
+          <div className="tutorialCallout">
+            <div className="tutorialNoteTitle">Formula Builder</div>
+            <div style={{fontSize:12, color:"var(--muted)", marginBottom:8}}>
+              Step 1 combines <em>m1</em> and <em>m2</em>. Each following step supplies the next metric (or numeric constant) and an operation to apply to the running expression.
+            </div>
+            <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
+              <strong>Brackets:</strong> Click the <em>Bracket</em> button on a step to group that step with the previous term - this inserts parentheses in the preview and affects evaluation order.
+            </div>
+            <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
+              <strong>Less toggle:</strong> Use the <em>Less is better</em> toggle at the top of the editor to mark this custom metric as "less is better" - percentiles for the saved metric will be inverted when computing ranks.
+            </div>
+            <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
+              <strong>Notation:</strong> metric slots are shown as <em>m1</em>, <em>m2</em>, <em>m3</em>... and italic numbers are numeric constants.
+            </div>
+            <div style={{display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10}}>
+              <button className={`segBtn ${cmEvaluationMode === "ltr" ? "active" : ""}`} type="button" onClick={() => setCmEvaluationMode("ltr")}>Left to right</button>
+              <button className={`segBtn ${cmEvaluationMode === "bidmas" ? "active" : ""}`} type="button" onClick={() => setCmEvaluationMode("bidmas")}>BIDMAS</button>
+              <div className="status">Preview: {formatCustomMetricPreview({ baseMetric: cmBaseMetric, steps: cmSteps, evaluationMode: cmEvaluationMode }, { showMetricNames: true })}</div>
+            </div>
+            <div style={{fontSize:12, color:"var(--muted)", marginBottom:8}}>
+              Example: <em>m1 + m2</em> then <em>(m1 + m2) - m3</em>
+            </div>
+            <div style={{display:"flex", flexDirection:"column", gap:8}}>
+              <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+                <div className="col" style={{minWidth:180}}>
+                  <label className="lbl">Metric 1</label>
+                  <select className="input" value={cmBaseMetric} onChange={e=>setCmBaseMetric(e.target.value)}>
+                    {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                  </select>
+                </div>
+              </div>
+              {(Array.isArray(cmSteps) ? cmSteps : []).map((step, idx) => (
+                <div key={`cm-step-${idx}`} className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+                  <div style={{width:140}}>
+                    <label className="lbl">Operation {idx + 1}</label>
+                    <select className="input" value={step.operation} onChange={e => updateMetricStep(idx, { operation: e.target.value })}>
+                      {CUSTOM_METRIC_OPERATIONS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="col" style={{minWidth:180}}>
+                    <label className="lbl">Metric {idx + 2}</label>
+                    {step.inputType === "metric" ? (
+                      <select className="input" value={step.metric} onChange={e => updateMetricStep(idx, { metric: e.target.value })}>
+                        {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                      </select>
+                    ) : (
+                      <input className="input" type="number" value={step.metric} onChange={e => updateMetricStep(idx, { metric: e.target.value })} placeholder="numeric value" />
+                    )}
+                  </div>
+                  <div style={{display:"flex", flexDirection:"column", minWidth:220}}>
+                    <div style={{display:"flex", gap:8, alignItems:"center", marginBottom:6}}>
+                      <label style={{fontSize:11, color:"var(--muted)", margin:0}}>Type</label>
+                      <select className="input" value={step.inputType || "metric"} onChange={e => updateMetricStep(idx, { inputType: e.target.value })} style={{width:120}}>
+                        <option value="metric">Metric</option>
+                        <option value="value">Value</option>
+                      </select>
+                      <button
+                        className={`segBtn ${step.groupPrevious ? "active" : ""}`}
+                        type="button"
+                        onClick={() => updateMetricStep(idx, { groupPrevious: !step.groupPrevious })}
+                        title="Group this step with the previous metric"
+                        style={{padding:"5px 8px"}}
+                      >
+                        Bracket
+                      </button>
+                      
+                    </div>
+                    <div style={{fontSize:12, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
+                      <strong>Preview:</strong> {formatCustomMetricPreviewForStep({ baseMetric: cmBaseMetric, steps: cmSteps, evaluationMode: cmEvaluationMode }, idx)}
+                    </div>
+                  </div>
+                  <button className="btn ghost tight" type="button" onClick={() => removeMetricStep(idx)} disabled={(cmSteps || []).length <= 1}>Remove</button>
+                </div>
+              ))}
+              <div>
+                <button className="btn ghost tight" type="button" onClick={addMetricStep}>+ Add Operation</button>
+              </div>
+            </div>
           </div>
 
           {customMetrics.length ? (
@@ -3941,7 +4405,11 @@ export default function App(){
                     <div style={{fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{m.name}</div>
                     <div style={{fontSize:11, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{renderFormula(m)}</div>
                   </div>
-                  <button className="btn ghost alt tight" onClick={()=>removeCustomMetric(m.name)}>Remove</button>
+                  <div className="badge">{m.evaluationMode === "bidmas" ? "BIDMAS" : "LTR"}</div>
+                  <div style={{display:"flex", gap:8}}>
+                    <button className="btn ghost alt tight" onClick={()=>startEditMetric(m)}>Edit</button>
+                    <button className="btn ghost alt tight" onClick={()=>removeCustomMetric(m.name)}>Remove</button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -3962,7 +4430,7 @@ export default function App(){
     // Get relevant positions for this role
     const rolePositions = ROLE_BOOK[roleName]?.baseline || [];
     const relevantPositions = new Set(rolePositions);
-    const isStrikerRole = typeof roleName === "string" && roleName.startsWith("ST —");
+    const isStrikerRole = typeof roleName === "string" && roleName.startsWith("ST -");
     
     const arr = filteredRows
       .map(r => {
@@ -4009,10 +4477,10 @@ export default function App(){
 
   function RoleLeadersMode(){
     const leaders = roleLeadersData(role, 30);
-    const items = leaders.map(l => ({ label: `${l.name} — ${l.pos} • ${l.club||"—"}`, value: Number(l.score.toFixed(2)) }));
+    const items = leaders.map(l => ({ label: `${l.name} - ${l.pos} • ${l.club||"-"}`, value: Number(l.score.toFixed(2)) }));
     return (
       <div className="card">
-        <div className="cardHead"><div style={{fontWeight:800}}>Role Leaders — {role}</div></div>
+        <div className="cardHead"><div style={{fontWeight:800}}>Role Leaders - {role}</div></div>
         <div className="cardBody">
           <HBar items={items} titleFmt={(v)=>v.toFixed(2)} valueMax={100}/>
         </div>
@@ -4039,7 +4507,7 @@ export default function App(){
     
     return (
       <div className="card">
-        <div className="cardHead"><div style={{fontWeight:800}}>Best Roles — {player}</div></div>
+        <div className="cardHead"><div style={{fontWeight:800}}>Best Roles - {player}</div></div>
         <div className="cardBody"><HBar items={items} titleFmt={(v)=>v.toFixed(1)} valueMax={100}/></div>
       </div>
     );
@@ -4049,14 +4517,14 @@ export default function App(){
     const [localStat, setLocalStat] = useState(statX);
     useEffect(()=>setLocalStat(statX),[statX]);
     const leaders = statLeadersData(localStat, 30);
-    const items = leaders.map(l => ({ label: `${l.name} — ${l.pos} • ${l.club||"—"}`, value: Number(l.v.toFixed(2)) }));
+    const items = leaders.map(l => ({ label: `${l.name} - ${l.pos} • ${l.club||"-"}`, value: Number(l.v.toFixed(2)) }));
     return (
       <div className="card">
         <div className="cardHead" style={{gap:12}}>
           <div style={{fontWeight:800}}>Stat Leaders</div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <select className="input" value={localStat} onChange={(e)=>{ setLocalStat(e.target.value); setStatX(e.target.value); }}>
-              {metricBuilderOptions.map(s => <option key={s} value={s}>{LABELS.get(s)||s}</option>)}
+              {scatterStatOptions.map(s => <option key={s} value={s}>{LABELS.get(s)||s}</option>)}
             </select>
           </div>
         </div>
@@ -4081,7 +4549,7 @@ export default function App(){
       .sort((a,b)=>b.score-a.score)
       .slice(0, 30);
 
-    const items = leaders.map(l => ({ label: `${l.name} — ${l.pos} • ${l.club||"—"}`, value: Number(l.score.toFixed(2)) }));
+    const items = leaders.map(l => ({ label: `${l.name} - ${l.pos} • ${l.club||"-"}`, value: Number(l.score.toFixed(2)) }));
 
     const toggleBaseline = (p) => {
       setCustomBaseline(prev => prev.includes(p) ? prev.filter(x=>x!==p) : [...prev, p]);
@@ -4118,7 +4586,10 @@ export default function App(){
       reader.onload = (event) => {
         try {
           const data = JSON.parse(event.target?.result);
-          if (data.name) setCustomName(data.name);
+          if (data.name) {
+            const nextName = strip(data.name) || "Custom Archetype";
+            setCustomName(nextName);
+          }
           if (data.baseline) setCustomBaseline(data.baseline);
           if (data.weights) setCustomWeights(data.weights);
         } catch (err) {
@@ -4144,7 +4615,7 @@ export default function App(){
       <>
         <div className="card">
           <div className="cardHead" style={{gap:12}}>
-            <div style={{fontWeight:800}}>Custom Archetype — Editor</div>
+            <div style={{fontWeight:800}}>Custom Archetype - Editor</div>
             <div style={{display:"flex", gap:8}}>
               <button className="btn ghost tight" onClick={exportArchetype}>Export</button>
               <label className="btn ghost tight" style={{cursor:"pointer"}}>
@@ -4158,7 +4629,20 @@ export default function App(){
             <div className="row" style={{gap:12, alignItems:"flex-start"}}>
               <div className="col">
                 <label className="lbl">Name</label>
-                <input className="input" value={customName} onChange={e=>setCustomName(e.target.value)} />
+                <input
+                  className="input"
+                  ref={customNameInputRef}
+                  defaultValue={customName}
+                  key={customName}
+                  onBlur={() => setCustomName(commitCustomName())}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      setCustomName(commitCustomName());
+                      e.currentTarget.blur();
+                    }
+                  }}
+                />
               </div>
               <div className="col">
                 <label className="lbl">Baseline positions</label>
@@ -4198,7 +4682,7 @@ export default function App(){
         </div>
 
         <div className="card">
-          <div className="cardHead"><div style={{fontWeight:800}}>Custom Archetype — Leaders ({label})</div></div>
+          <div className="cardHead"><div style={{fontWeight:800}}>Custom Archetype - Leaders ({label})</div></div>
           <div className="cardBody">
             <HBar items={items} titleFmt={(v)=>v.toFixed(2)} valueMax={100}/>
           </div>
@@ -5282,6 +5766,18 @@ export default function App(){
     const [dbStatFilters, setDbStatFilters] = useStickyState("db:statFilters", []);
     const [dbStatFilterLogic, setDbStatFilterLogic] = useStickyState("db:statFilterLogic", "AND");
     const [dbStatFilterMode, setDbStatFilterMode] = useStickyState("db:statFilterMode", "raw");
+    const dbStatOptions = useMemo(() => {
+      return Array.from(new Set([...metricBuilderOptions, ...customMetricNames]))
+        .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
+    }, [metricBuilderOptions, customMetricNames]);
+
+    const renderDbStatOptions = () => (
+      <>
+        {dbStatOptions.map(stat => (
+          <option key={stat} value={stat}>{LABELS.get(stat) || stat}</option>
+        ))}
+      </>
+    );
 
     const dbClubOptions = useMemo(() => {
       const clubs = filteredRows.map(r => getCell(r, "Club")).filter(Boolean);
@@ -5291,17 +5787,17 @@ export default function App(){
     const dbPctIndex = useMemo(() => buildPercentileIndex(filteredRows, percentileStats), [filteredRows, percentileStats]);
 
     useEffect(() => {
-      if (!metricBuilderOptions.length) return;
-      if (!metricBuilderOptions.includes(dbCardStatPicker)) {
-        setDbCardStatPicker(metricBuilderOptions[0]);
+      if (!dbStatOptions.length) return;
+      if (!dbStatOptions.includes(dbCardStatPicker)) {
+        setDbCardStatPicker(dbStatOptions[0]);
       }
-      if (!metricBuilderOptions.includes(dbFilterStatPicker)) {
-        setDbFilterStatPicker(metricBuilderOptions[0]);
+      if (!dbStatOptions.includes(dbFilterStatPicker)) {
+        setDbFilterStatPicker(dbStatOptions[0]);
       }
       setDbSelectedStats(prev => {
         const prevList = Array.isArray(prev) ? prev : [];
         const trimmed = prevList
-          .filter(stat => metricBuilderOptions.includes(stat))
+          .filter(stat => dbStatOptions.includes(stat))
           .slice(0, MAX_DB_STATS);
         const unchanged =
           trimmed.length === prevList.length &&
@@ -5309,13 +5805,13 @@ export default function App(){
         if (unchanged && trimmed.length > 0) return prevList;
         if (trimmed.length > 0) return trimmed;
         const defaults = ["Goals", "Assist", "xG/90", "xA/90", "Avg Rating", "Minutes"]
-          .filter(stat => metricBuilderOptions.includes(stat));
+          .filter(stat => dbStatOptions.includes(stat));
         const fallback = defaults.length
           ? defaults
-          : metricBuilderOptions.slice(0, Math.min(6, metricBuilderOptions.length));
+          : dbStatOptions.slice(0, Math.min(6, dbStatOptions.length));
         return fallback.slice(0, MAX_DB_STATS);
       });
-    }, [metricBuilderOptions, dbCardStatPicker, dbFilterStatPicker, setDbSelectedStats, setDbCardStatPicker, setDbFilterStatPicker]);
+    }, [dbStatOptions, dbCardStatPicker, dbFilterStatPicker, setDbSelectedStats, setDbCardStatPicker, setDbFilterStatPicker]);
 
     useEffect(() => {
       if (!dbClubFilter) return;
@@ -5323,14 +5819,14 @@ export default function App(){
     }, [dbClubFilter, dbClubOptions, setDbClubFilter]);
 
     const addDbStatFilter = useCallback(() => {
-      const fallbackStat = metricBuilderOptions.includes("Goals")
+      const fallbackStat = dbStatOptions.includes("Goals")
         ? "Goals"
-        : (metricBuilderOptions[0] || "");
+        : (dbStatOptions[0] || "");
       setDbStatFilters(prev => {
         const base = Array.isArray(prev) ? prev : [];
         return [...base, { id: makeFilterId(), stat: dbFilterStatPicker || fallbackStat, op: ">=", value: "" }];
       });
-    }, [metricBuilderOptions, dbFilterStatPicker, setDbStatFilters]);
+    }, [dbStatOptions, dbFilterStatPicker, setDbStatFilters]);
 
     const updateDbStatFilter = useCallback((id, patch) => {
       setDbStatFilters(prev => {
@@ -5388,12 +5884,12 @@ export default function App(){
 
     const resetSelectedStats = () => {
       const defaults = ["Goals", "Assist", "xG/90", "xA/90", "Avg Rating", "Minutes"]
-        .filter(stat => metricBuilderOptions.includes(stat))
+        .filter(stat => dbStatOptions.includes(stat))
         .slice(0, MAX_DB_STATS);
       if (defaults.length) {
         setDbSelectedStats(defaults);
       } else {
-        setDbSelectedStats(metricBuilderOptions.slice(0, Math.min(6, metricBuilderOptions.length, MAX_DB_STATS)));
+        setDbSelectedStats(dbStatOptions.slice(0, Math.min(6, dbStatOptions.length, MAX_DB_STATS)));
       }
     };
 
@@ -5433,14 +5929,19 @@ export default function App(){
       if (mode === "percentile") {
         const metric = metricValue(row, statName);
         const pct = percentileFor(dbPctIndex, statName, metric);
-        return Number.isFinite(pct) ? `${tf(pct, 1)}%` : "—";
+        return Number.isFinite(pct) ? `${tf(pct, 1)}%` : "-";
+      }
+
+      if (customMetricMap.has(statName)) {
+        const value = metricValue(row, statName);
+        return Number.isFinite(value) ? tf(value, 2) : "-";
       }
 
       const raw = getCell(row, statName);
       const n = numerify(raw);
       if (!Number.isFinite(n)) {
         const text = strip(raw);
-        return text || "—";
+        return text || "-";
       }
 
       const norm = keyNorm(statName);
@@ -5492,7 +5993,7 @@ export default function App(){
               <div style={{width:320, maxWidth:"100%"}}>
                 <label className="lbl">Add database stat filter</label>
                 <select className="input" value={dbFilterStatPicker} onChange={e => setDbFilterStatPicker(e.target.value)}>
-                  {metricBuilderOptions.map(stat => <option key={stat} value={stat}>{LABELS.get(stat) || stat}</option>)}
+                  {renderDbStatOptions()}
                 </select>
               </div>
               <button className="btn ghost tight" type="button" onClick={addDbStatFilter}>+ Add Filter</button>
@@ -5520,7 +6021,7 @@ export default function App(){
               {(Array.isArray(dbStatFilters) ? dbStatFilters : []).map((f, idx) => (
                 <div key={f?.id || `db-sf-${idx}`} className="statFilterRow">
                   <select className="input" value={f?.stat || ""} onChange={e => updateDbStatFilter(f?.id, { stat: e.target.value })}>
-                    {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
+                    {renderDbStatOptions()}
                   </select>
                   <select className="input" value={f?.op || ">="} onChange={e => updateDbStatFilter(f?.id, { op: e.target.value })}>
                     <option value=">=">&gt;=</option>
@@ -5539,9 +6040,7 @@ export default function App(){
               <div style={{width:320, maxWidth:"100%"}}>
                 <label className="lbl">Add stat to cards</label>
                 <select className="input" value={dbCardStatPicker} onChange={e => setDbCardStatPicker(e.target.value)}>
-                  {metricBuilderOptions.map(stat => (
-                    <option key={stat} value={stat}>{LABELS.get(stat) || stat}</option>
-                  ))}
+                  {renderDbStatOptions()}
                 </select>
               </div>
               <button
@@ -5856,7 +6355,7 @@ export default function App(){
               {uniqueClubs.map(club => <option key={club} value={club}>{club}</option>)}
             </select>
 
-            <label className="lbl">Search (name / club / pos) — live</label>
+            <label className="lbl">Search (name / club / pos) - live</label>
             <div className="row">
               <input
                 className="input"
@@ -5968,7 +6467,7 @@ export default function App(){
                                                               scopeRows.length} players)
             </div>
             <div className="statChip" style={{display:"inline-flex", width:"fit-content"}}>
-              Avg Rating {Number.isFinite(filteredAvgRating) ? filteredAvgRating.toFixed(1) : "—"}
+              Avg Rating {Number.isFinite(filteredAvgRating) ? filteredAvgRating.toFixed(1) : "-"}
             </div>
 
             <label className="lbl">Player</label>
@@ -6006,7 +6505,7 @@ export default function App(){
         <div className="topStats">
           <span className="statChip">Rows {filteredRows.length}/{rows.length}</span>
           <span className="statChip">Scope: {compScope}</span>
-          <span className="statChip">Avg Rating {Number.isFinite(filteredAvgRating) ? filteredAvgRating.toFixed(1) : "—"}</span>
+          <span className="statChip">Avg Rating {Number.isFinite(filteredAvgRating) ? filteredAvgRating.toFixed(1) : "-"}</span>
         </div>
         <div className="spacer"/>
         <div className="seg">

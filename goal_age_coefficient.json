@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "metrics": [
+    {
+      "id": "cm_1777380885947",
+      "name": "goal age coefficient",
+      "baseMetric": "Goals",
+      "steps": [
+        {
+          "operation": "add",
+          "metric": "10",
+          "inputType": "value",
+          "groupPrevious": false
+        },
+        {
+          "operation": "divide",
+          "metric": "Age",
+          "inputType": "metric",
+          "groupPrevious": false
+        }
+      ],
+      "evaluationMode": "bidmas",
+      "metricA": "Goals",
+      "metricB": "10",
+      "operation": "add",
+      "color": "#FF6B6B"
+    }
+  ]
+}
