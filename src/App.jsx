@@ -1610,6 +1610,63 @@ function bestNearRole(row, pctIndex, rolePctByRole = null) {
   return { role: best, score: clamp100(bestScore) };
 }
 
+function cosineSimilarity(valuesA, valuesB) {
+  if (!Array.isArray(valuesA) || !Array.isArray(valuesB) || valuesA.length !== valuesB.length || !valuesA.length) return NaN;
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+  for (let i = 0; i < valuesA.length; i++) {
+    const a = Number(valuesA[i]);
+    const b = Number(valuesB[i]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    dot += a * b;
+    magA += a * a;
+    magB += b * b;
+  }
+  if (!magA || !magB) return NaN;
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+function getSimilarityScopeRole(scope, bestRole, sidebarRole, overallRole = "Overall") {
+  const overallKey = Object.keys(ROLE_BOOK).find(roleName => keyNorm(roleName) === keyNorm(overallRole)) || overallRole;
+  switch (scope) {
+    case "sidebarRole":
+      return sidebarRole || bestRole || overallKey;
+    case "overallRole":
+      return overallKey || bestRole || sidebarRole;
+    case "bestRole":
+    default:
+      return bestRole || sidebarRole || overallKey;
+  }
+}
+
+function getSimilarityStatsForRole(roleName) {
+  const stats = ROLE_STATS[roleName] || [];
+  return stats.length ? stats : ALL_ROLE_STATS;
+}
+
+function getSimilarityBaselineForRole(roleName, sourceRow) {
+  const baseline = ROLE_BASELINES[roleName] || ROLE_BOOK[roleName]?.baseline || [];
+  if (baseline.length) return baseline;
+  return expandFMPositions(getCell(sourceRow, "Pos"));
+}
+
+function cosineSimilarityFromRows(sourceRow, candidateRow, statNames, pctIndex, metricResolver) {
+  const sourceValues = [];
+  const candidateValues = [];
+  for (const stat of Array.isArray(statNames) ? statNames : []) {
+    const sourceRaw = metricResolver(sourceRow, stat);
+    const candidateRaw = metricResolver(candidateRow, stat);
+    const sourcePct = percentileFor(pctIndex, stat, sourceRaw);
+    const candidatePct = percentileFor(pctIndex, stat, candidateRaw);
+    if (!Number.isFinite(sourcePct) || !Number.isFinite(candidatePct)) continue;
+    sourceValues.push(sourcePct / 100);
+    candidateValues.push(candidatePct / 100);
+  }
+  if (sourceValues.length < 4 || candidateValues.length < 4 || sourceValues.length !== candidateValues.length) return NaN;
+  return cosineSimilarity(sourceValues, candidateValues);
+}
+
 /* ===================== Big-metric families ===================== */
 const BIG_METRICS = {
   GK: ["Expected Goals Prevented/90","Save Ratio","Saves Held","Conceded/90"],
@@ -3706,6 +3763,7 @@ export default function App(){
     const [profileMatrixRoleA, setProfileMatrixRoleA] = useStickyState("profile:matrixRoleA", "");
     const [profileMatrixRoleB, setProfileMatrixRoleB] = useStickyState("profile:matrixRoleB", "");
     const [profileMatrixPool, setProfileMatrixPool] = useStickyState("profile:matrixPool", "Positionally Relevant");
+    const [profileSimilarityScope, setProfileSimilarityScope] = useStickyState("profile:similarityScope", "bestRole");
     const r = rowByName.get(player);
     const headerRef = useRef(null);
     const bestBoxRef = useRef(null);
@@ -3730,6 +3788,44 @@ export default function App(){
     // Use the fresh calculation for consistency
     const bestRole = roleScores.length > 0 ? roleScores[0].roleName : cachedRole;
     const bestScore = roleScores.length > 0 ? roleScores[0].score : Number(br.score || 0);
+
+    const similarityScopeLabels = {
+      bestRole: "Best Role",
+      sidebarRole: "Sidebar Role",
+      overallRole: "Overall Role"
+    };
+    const similarityScopeRole = getSimilarityScopeRole(profileSimilarityScope, bestRole, role, "Overall");
+    const similarityStatNames = getSimilarityStatsForRole(similarityScopeRole);
+    const similarityBaseline = getSimilarityBaselineForRole(similarityScopeRole, r);
+    const similarityCandidates = useMemo(() => {
+      if (!r) return [];
+      const sourceRows = Array.isArray(scopeRows) ? scopeRows : filteredRows;
+      const sourceName = getCell(r, "Name") || player;
+      const baseTokens = Array.isArray(similarityBaseline) ? similarityBaseline : [];
+      return sourceRows
+        .map(candidate => {
+          const candidateName = getCell(candidate, "Name") || "";
+          if (!candidateName || keyNorm(candidateName) === keyNorm(sourceName)) return null;
+          const candidateTokens = expandFMPositions(getCell(candidate, "Pos"));
+          if (baseTokens.length && !sharesAny(candidateTokens, baseTokens)) return null;
+          const score = cosineSimilarityFromRows(r, candidate, similarityStatNames, pctIndex, metricValue);
+          if (!Number.isFinite(score)) return null;
+          const candAge = numCell(candidate, "Age");
+          const candValMid = parseMoneyRange(getCell(candidate, "Transfer Value")).mid;
+          return {
+            name: candidateName,
+            club: getCell(candidate, "Club") || "",
+            pos: primaryFMPosition(candidate["Pos"]) || (candidateTokens[0] || ""),
+            score,
+            role: getCell(candidate, "Pos") || "",
+            age: Number.isFinite(candAge) ? candAge : NaN,
+            value: Number.isFinite(candValMid) ? candValMid : NaN
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+    }, [r, player, scopeRows, filteredRows, similarityBaseline, similarityStatNames, pctIndex, metricValue]);
 
     // Use calculated roleScores for top roles
     const topRoles = roleScores.slice(0,2).map(x => x.roleName);
@@ -3916,9 +4012,9 @@ export default function App(){
         </div>
 
         <div style={{display: "flex", flexDirection: "column", gap: "12px", padding: "0 12px"}}>
-          {/* Pizza Chart - Full Width Centered */}
+          {/* Pizza Chart + Similarity */}
           <div className="card">
-            <div className="cardHead" style={{padding: "12px 16px"}}>
+            <div className="cardHead" style={{padding: "12px 16px", gap: 12, flexWrap: "wrap"}}>
               <div style={{display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap"}}>
                 <div style={{fontWeight:800, fontSize: "16px"}}>Role Pizza</div>
                 <select className="input" style={{minWidth:220, maxWidth:360, padding:"8px 10px"}} value={currentProfileRole} onChange={e=>setProfileRole(e.target.value)}>
@@ -3928,21 +4024,74 @@ export default function App(){
                   })}
                 </select>
               </div>
-              <div className="badge">vs {compScope}</div>
-            </div>
-            <div className="cardBody" style={{padding: "16px", display: "flex", flexDirection: "column", alignItems: "center"}}>
-              <div style={{fontSize: "12px", color: "var(--muted)", marginBottom: "16px"}}>
-                {player} - {currentProfileRole}
+              <div style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginLeft:"auto"}}>
+                <div className="badge">vs {compScope}</div>
+                <select className="input" style={{minWidth:200, padding:"8px 10px"}} value={profileSimilarityScope} onChange={e => setProfileSimilarityScope(e.target.value)}>
+                  <option value="bestRole">Best Role</option>
+                  <option value="sidebarRole">Sidebar Role</option>
+                  <option value="overallRole">Overall Role</option>
+                </select>
               </div>
-              <div style={{width: "600px", height: "600px"}}>
-                <Pizza 
-                  playerName={player}
-                  playerData={r}
-                  roleStats={statsProfileRole}
-                  compScope={compScope}
-                  pctIndex={pctIndex}
-                  customMetricColors={customMetricColorMap}
-                />
+            </div>
+            <div className="cardBody" style={{padding: "16px"}}>
+              <div style={{display:"grid", gridTemplateColumns:"minmax(0, 1.25fr) minmax(280px, 0.75fr)", gap:16, alignItems:"start"}}>
+                <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:12, minWidth:0}}>
+                  <div style={{fontSize: "12px", color: "var(--muted)", textAlign: "center"}}>
+                    {player} - {currentProfileRole}
+                  </div>
+                  <div style={{width: "100%", maxWidth: "600px"}}>
+                    <Pizza 
+                      playerName={player}
+                      playerData={r}
+                      roleStats={statsProfileRole}
+                      compScope={compScope}
+                      pctIndex={pctIndex}
+                      customMetricColors={customMetricColorMap}
+                    />
+                  </div>
+                </div>
+
+                <div style={{borderLeft:"1px solid var(--cardBorder)", paddingLeft:16, minWidth:0}}>
+                  <div style={{display:"flex", justifyContent:"space-between", gap:8, alignItems:"center", marginBottom:10, flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{fontWeight:800}}>Similar Players</div>
+                      <div style={{fontSize:12, color:"var(--muted)"}}>
+                        Based on {similarityScopeLabels[profileSimilarityScope] || "selected scope"}: {similarityScopeRole}
+                      </div>
+                    </div>
+                    <div className="badge">Top 10</div>
+                  </div>
+                  <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                    {similarityCandidates.length ? similarityCandidates.map(item => {
+                      return (
+                        <button
+                          key={item.name}
+                          type="button"
+                          onClick={() => {
+                            setPlayer(item.name);
+                            setMode("Player Profile");
+                          }}
+                          style={{
+                            width:"100%",
+                            border:"1px solid var(--cardBorder)",
+                            borderRadius:10,
+                            background:"color-mix(in oklab, var(--bg), white 2%)",
+                            padding:"8px 10px",
+                            textAlign:"left",
+                            cursor:"pointer"
+                          }}
+                          title={`Open ${item.name}'s profile`}
+                        >
+                            <div style={{fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{item.name}</div>
+                            <div style={{fontSize:11, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{item.pos || item.role || "Unknown role"}{item.club ? ` • ${item.club}` : ""}</div>
+                            <div style={{fontSize:11, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{Number.isFinite(item.age) ? `Age ${tf(item.age,0)}` : ""}{Number.isFinite(item.value) ? ` • ${money(item.value)}` : ""}</div>
+                        </button>
+                      );
+                    }) : (
+                      <div className="status">No similar players found for this scope.</div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
