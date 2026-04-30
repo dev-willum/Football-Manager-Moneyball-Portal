@@ -771,8 +771,21 @@ function applyCustomMetricOperation(operation, a, b) {
   }
 }
 
+function applyCustomMetricWeight(node, weight) {
+  const numericWeight = Number(weight);
+  if (!node || !Number.isFinite(numericWeight) || numericWeight === 1) return node;
+  return {
+    type: "group",
+    operation: "multiply",
+    left: node,
+    right: { type: "value", value: numericWeight, label: tf(numericWeight, 2) }
+  };
+}
+
 function normalizeCustomMetricSteps(metric) {
   const baseMetric = strip(metric?.baseMetric || metric?.metricA || metric?.metric || "");
+  const baseWeightRaw = Number(metric?.baseWeight ?? metric?.weight ?? 1);
+  const baseWeight = Number.isFinite(baseWeightRaw) ? baseWeightRaw : 1;
   const rawSteps = Array.isArray(metric?.steps) ? metric.steps : [];
   const steps = rawSteps
     .map(step => {
@@ -782,7 +795,9 @@ function normalizeCustomMetricSteps(metric) {
       const stepMetric = strip(step?.metric || step?.metricName || step?.value || "");
       const inputType = step?.inputType === "value" ? "value" : "metric";
       const groupPrevious = Boolean(step?.groupPrevious || step?.bracketed || step?.brackets || step?.groupWithPrevious);
-      return stepMetric ? { operation, metric: stepMetric, inputType, groupPrevious } : null;
+      const weightRaw = Number(step?.weight ?? step?.multiplier ?? 1);
+      const weight = Number.isFinite(weightRaw) ? weightRaw : 1;
+      return stepMetric ? { operation, metric: stepMetric, inputType, groupPrevious, weight } : null;
     })
     .filter(Boolean);
 
@@ -790,25 +805,26 @@ function normalizeCustomMetricSteps(metric) {
     steps.push({
       operation: CUSTOM_METRIC_OPERATIONS.some(op => op.value === metric?.operation) ? metric.operation : "add",
       metric: strip(metric?.metricB || ""),
-      groupPrevious: false
+      groupPrevious: false,
+      weight: 1
     });
   }
 
   const evaluationMode = metric?.evaluationMode === "bidmas" ? "bidmas" : "ltr";
 
-  return { baseMetric, steps, evaluationMode };
+  return { baseMetric, baseWeight, steps, evaluationMode };
 }
 
 function buildCustomMetricExpression(metric, resolveValue) {
-  const { baseMetric, steps } = normalizeCustomMetricSteps(metric);
+  const { baseMetric, baseWeight, steps } = normalizeCustomMetricSteps(metric);
   if (!baseMetric || !Array.isArray(steps) || !steps.length) return null;
 
-  const terms = [resolveValue(baseMetric, null, true, 0)];
+  const terms = [applyCustomMetricWeight(resolveValue(baseMetric, null, true, 0), baseWeight)];
   const operations = [];
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
-    const nextValue = resolveValue(step.metric, step, false, i + 1);
+    const nextValue = applyCustomMetricWeight(resolveValue(step.metric, step, false, i + 1), step.weight);
     if (step.groupPrevious && terms.length) {
       terms[terms.length - 1] = {
         type: "group",
@@ -972,7 +988,7 @@ function normalizeCustomMetrics(metrics) {
     if (!name) continue;
     const slug = keyNorm(name);
     if (seen.has(slug)) continue;
-    const { baseMetric, steps, evaluationMode } = normalizeCustomMetricSteps(m);
+    const { baseMetric, baseWeight, steps, evaluationMode } = normalizeCustomMetricSteps(m);
     if (!baseMetric || !steps.length) continue;
     const color = /^#[0-9a-fA-F]{6}$/.test(String(m?.color || "")) ? String(m.color) : "#FF6B6B";
     const firstStep = steps[0] || null;
@@ -980,6 +996,7 @@ function normalizeCustomMetrics(metrics) {
       id: strip(m?.id || `cm_${slug}`),
       name,
       baseMetric,
+      baseWeight,
       steps,
       evaluationMode,
       metricA: baseMetric,
@@ -1572,7 +1589,7 @@ function percentileFor(pctIndex, stat, value) {
 }
 
 /* ===================== Role scoring ===================== */
-function roleScoreFor(row, roleName, pctIndex, rolePctByRole = null) {
+function roleScoreFor(row, roleName, pctIndex, rolePctByRole = null, metricResolver = numCell) {
   const weights = typeof roleName === "string" ? ROLE_WEIGHTS[roleName] : (roleName?.weights||null);
   if (!weights) return 0;
   const scoringPctIndex = (typeof roleName === "string" && rolePctByRole && rolePctByRole[roleName])
@@ -1580,7 +1597,7 @@ function roleScoreFor(row, roleName, pctIndex, rolePctByRole = null) {
     : pctIndex;
   let posW = 0, sum = 0;
   for (const [stat, w] of Object.entries(weights)) {
-    const v = numCell(row, stat);
+    const v = metricResolver(row, stat);
     const pct = percentileFor(scoringPctIndex, stat, v);
     if (!Number.isFinite(pct)) continue;
     if (w >= 0) {
@@ -3049,11 +3066,13 @@ export default function App(){
 
   const [cmName, setCmName] = useState("");
   const [cmBaseMetric, setCmBaseMetric] = useState("");
+  const [cmBaseWeight, setCmBaseWeight] = useState(1);
   const [cmSteps, setCmSteps] = useState([{ operation: "add", metric: "", inputType: "metric", groupPrevious: false }]);
   const [cmEditId, setCmEditId] = useState(null);
   const [cmEvaluationMode, setCmEvaluationMode] = useState("ltr");
   const [cmColor, setCmColor] = useState("#FF6B6B");
   const [cmLessIsBetter, setCmLessIsBetter] = useState(false);
+  const [cmShowWeights, setCmShowWeights] = useState(false);
 
   const cmNameInputRef = useRef(null);
 
@@ -3320,12 +3339,15 @@ export default function App(){
     if (!metricBuilderOptions.length) return;
     setCmBaseMetric(prev => metricBuilderOptions.includes(prev) ? prev : metricBuilderOptions[0]);
     setCmSteps(prev => {
-      const seed = Array.isArray(prev) && prev.length ? prev : [{ operation: "add", metric: metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0] }];
+      const seed = Array.isArray(prev) && prev.length ? prev : [{ operation: "add", metric: metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0], inputType: "metric", groupPrevious: false, weight: 1 }];
       return seed.map((step, idx) => ({
         operation: CUSTOM_METRIC_OPERATIONS.some(op => op.value === step?.operation) ? step.operation : "add",
         metric: metricBuilderOptions.includes(step?.metric)
           ? step.metric
-          : (metricBuilderOptions[Math.min(idx + 1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0])
+          : (metricBuilderOptions[Math.min(idx + 1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0]),
+        inputType: step?.inputType === "value" ? "value" : "metric",
+        groupPrevious: Boolean(step?.groupPrevious),
+        weight: Number.isFinite(Number(step?.weight)) ? Number(step.weight) : 1
       }));
     });
   }, [metricBuilderOptions]);
@@ -3364,7 +3386,8 @@ export default function App(){
         operation: CUSTOM_METRIC_OPERATIONS.some(op => op.value === step?.operation) ? step.operation : "add",
         metric: strip(step?.metric || ""),
         inputType: step?.inputType === "value" ? "value" : "metric",
-        groupPrevious: Boolean(step?.groupPrevious)
+        groupPrevious: Boolean(step?.groupPrevious),
+        weight: Number.isFinite(Number(step?.weight)) ? Number(step.weight) : 1
       }))
       .filter(step => step.metric);
     if (!baseMetric) {
@@ -3392,6 +3415,7 @@ export default function App(){
             ...m,
             name,
             baseMetric,
+            baseWeight: Number.isFinite(Number(cmBaseWeight)) ? Number(cmBaseWeight) : 1,
             steps,
             evaluationMode: cmEvaluationMode,
             metricA: baseMetric,
@@ -3429,6 +3453,7 @@ export default function App(){
                 ...m,
                 name,
                 baseMetric,
+                baseWeight: Number.isFinite(Number(cmBaseWeight)) ? Number(cmBaseWeight) : 1,
                 steps,
                 evaluationMode: cmEvaluationMode,
                 metricA: baseMetric,
@@ -3449,6 +3474,7 @@ export default function App(){
             ...m,
             name,
             baseMetric,
+            baseWeight: Number.isFinite(Number(cmBaseWeight)) ? Number(cmBaseWeight) : 1,
             steps,
             lessIsBetter: Boolean(cmLessIsBetter),
             evaluationMode: cmEvaluationMode,
@@ -3463,11 +3489,12 @@ export default function App(){
     // Clear editor state
     setCmName("");
     setCmBaseMetric(metricBuilderOptions[0] || "");
-    setCmSteps([{ operation: "add", metric: metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false }]);
+    setCmBaseWeight(1);
+    setCmSteps([{ operation: "add", metric: metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false, weight: 1 }]);
     setCmLessIsBetter(false);
     setCmEvaluationMode("ltr");
     setCmEditId(null);
-  }, [commitCmName, cmBaseMetric, cmSteps, cmColor, cmEvaluationMode, metricBuilderOptions, customMetrics, setCustomMetrics]);
+  }, [commitCmName, cmBaseMetric, cmBaseWeight, cmSteps, cmColor, cmEvaluationMode, metricBuilderOptions, customMetrics, setCustomMetrics]);
 
   const removeCustomMetric = useCallback((metricName) => {
     setCustomMetrics(prev => prev.filter(m => m.name !== metricName));
@@ -3478,9 +3505,10 @@ export default function App(){
     setCmName(m.name || "");
     setCmColor(m.color || "#FF6B6B");
     setCmBaseMetric(m.baseMetric || (metricBuilderOptions[0] || ""));
+    setCmBaseWeight(Number.isFinite(Number(m.baseWeight)) ? Number(m.baseWeight) : 1);
     setCmEvaluationMode(m.evaluationMode || "ltr");
     // steps from metric already contain operation, metric, inputType
-    setCmSteps(Array.isArray(m.steps) ? m.steps.map(s => ({ operation: s.operation || "add", metric: s.metric || "", inputType: s.inputType || "metric", groupPrevious: Boolean(s.groupPrevious) })) : []);
+    setCmSteps(Array.isArray(m.steps) ? m.steps.map(s => ({ operation: s.operation || "add", metric: s.metric || "", inputType: s.inputType || "metric", groupPrevious: Boolean(s.groupPrevious), weight: Number.isFinite(Number(s.weight)) ? Number(s.weight) : 1 })) : []);
     setCmLessIsBetter(Boolean(m.lessIsBetter));
   }, [metricBuilderOptions]);
 
@@ -3489,7 +3517,8 @@ export default function App(){
     setCmName("");
     setCmColor("#FF6B6B");
     setCmBaseMetric(metricBuilderOptions[0] || "");
-    setCmSteps([{ operation: "add", metric: metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false }]);
+    setCmBaseWeight(1);
+    setCmSteps([{ operation: "add", metric: metricBuilderOptions[Math.min(1, metricBuilderOptions.length - 1)] || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false, weight: 1 }]);
     setCmLessIsBetter(false);
     setCmEvaluationMode("ltr");
   }, [metricBuilderOptions]);
@@ -4384,7 +4413,7 @@ export default function App(){
 
     const addMetricStep = () => {
       const pick = metricBuilderOptions.find(metric => metric !== cmBaseMetric && !cmSteps.some(step => step.metric === metric));
-      setCmSteps(prev => [...prev, { operation: "add", metric: pick || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false }]);
+      setCmSteps(prev => [...prev, { operation: "add", metric: pick || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false, weight: 1 }]);
     };
 
     const updateMetricStep = (idx, patch) => {
@@ -4467,25 +4496,20 @@ export default function App(){
 
           <div className="tutorialCallout">
             <div className="tutorialNoteTitle">Formula Builder</div>
-            <div style={{fontSize:12, color:"var(--muted)", marginBottom:8}}>
-              Step 1 combines <em>m1</em> and <em>m2</em>. Each following step supplies the next metric (or numeric constant) and an operation to apply to the running expression.
+            <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
+              Weights multiply each metric before the formula is evaluated. Leave them at 1 for normal behavior.
             </div>
             <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
-              <strong>Brackets:</strong> Click the <em>Bracket</em> button on a step to group that step with the previous term - this inserts parentheses in the preview and affects evaluation order.
+              Click <em>Bracket</em> to group a step with the previous term and change the evaluation order.
             </div>
             <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
-              <strong>Less toggle:</strong> Use the <em>Less is better</em> toggle at the top of the editor to mark this custom metric as "less is better" - percentiles for the saved metric will be inverted when computing ranks.
-            </div>
-            <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
-              <strong>Notation:</strong> metric slots are shown as <em>m1</em>, <em>m2</em>, <em>m3</em>... and italic numbers are numeric constants.
+              Use <em>Less is better</em> when smaller values should score higher after ranking.
             </div>
             <div style={{display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10}}>
               <button className={`segBtn ${cmEvaluationMode === "ltr" ? "active" : ""}`} type="button" onClick={() => setCmEvaluationMode("ltr")}>Left to right</button>
               <button className={`segBtn ${cmEvaluationMode === "bidmas" ? "active" : ""}`} type="button" onClick={() => setCmEvaluationMode("bidmas")}>BIDMAS</button>
+              <button className={`segBtn ${cmShowWeights ? "active" : ""}`} type="button" onClick={() => setCmShowWeights(prev => !prev)}>Show weights</button>
               <div className="status">Preview: {formatCustomMetricPreview({ baseMetric: cmBaseMetric, steps: cmSteps, evaluationMode: cmEvaluationMode }, { showMetricNames: true })}</div>
-            </div>
-            <div style={{fontSize:12, color:"var(--muted)", marginBottom:8}}>
-              Example: <em>m1 + m2</em> then <em>(m1 + m2) - m3</em>
             </div>
             <div style={{display:"flex", flexDirection:"column", gap:8}}>
               <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
@@ -4495,6 +4519,12 @@ export default function App(){
                     {metricBuilderOptions.map(k => <option key={k} value={k}>{LABELS.get(k)||k}</option>)}
                   </select>
                 </div>
+                {cmShowWeights ? (
+                  <div style={{width:120}}>
+                    <label className="lbl">Weight 1</label>
+                    <input className="input" type="number" step={numericStep(cmBaseWeight, 0.1)} value={cmBaseWeight} onChange={e=>setCmBaseWeight(Number(e.target.value) || 0)} />
+                  </div>
+                ) : null}
               </div>
               {(Array.isArray(cmSteps) ? cmSteps : []).map((step, idx) => (
                 <div key={`cm-step-${idx}`} className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
@@ -4514,6 +4544,12 @@ export default function App(){
                       <input className="input" type="number" value={step.metric} onChange={e => updateMetricStep(idx, { metric: e.target.value })} placeholder="numeric value" />
                     )}
                   </div>
+                  {cmShowWeights ? (
+                    <div style={{width:120}}>
+                      <label className="lbl">Weight {idx + 2}</label>
+                      <input className="input" type="number" step={numericStep(step.weight, 0.1)} value={step.weight ?? 1} onChange={e => updateMetricStep(idx, { weight: Number(e.target.value) || 0 })} />
+                    </div>
+                  ) : null}
                   <div style={{display:"flex", flexDirection:"column", minWidth:220}}>
                     <div style={{display:"flex", gap:8, alignItems:"center", marginBottom:6}}>
                       <label style={{fontSize:11, color:"var(--muted)", margin:0}}>Type</label>
@@ -4689,10 +4725,12 @@ export default function App(){
     const label = customName || "Custom Archetype";
     const weights = customWeights;
     const baseline = customBaseline;
+    const archetypeStatOptions = Array.from(new Set([...metricBuilderOptions, ...customMetricNames]))
+      .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
 
     const leaders = filteredRows
       .filter(r => sharesAny(expandFMPositions(r["Pos"]), baseline))
-      .map(r => ({ r, score: roleScoreFor(r, { weights, baseline }, pctIndex) }))
+      .map(r => ({ r, score: roleScoreFor(r, { weights, baseline }, pctIndex, null, metricValue) }))
       .map(x => ({ name:x.r["Name"], club:x.r["Club"], pos:(expandFMPositions(x.r["Pos"])[0]||""), score:x.score }))
       .filter(x => Number.isFinite(x.score))
       .sort((a,b)=>b.score-a.score)
@@ -4704,7 +4742,7 @@ export default function App(){
       setCustomBaseline(prev => prev.includes(p) ? prev.filter(x=>x!==p) : [...prev, p]);
     };
     const addStat = () => {
-      const pick = metricBuilderOptions.find(s => !(s in customWeights));
+      const pick = archetypeStatOptions.find(s => !(s in customWeights));
       if (pick) setCustomWeights({...customWeights, [pick]: 1.0});
     };
     const removeStat = (s) => {
@@ -4816,7 +4854,7 @@ export default function App(){
                       const w = customWeights[s];
                       const next = {...customWeights}; delete next[s]; next[val] = w; setCustomWeights(next);
                     }}>
-                      {metricBuilderOptions.map(st => <option key={st} value={st}>{LABELS.get(st)||st}</option>)}
+                      {archetypeStatOptions.map(st => <option key={st} value={st}>{LABELS.get(st)||st}</option>)}
                     </select>
                   </div>
                   <div style={{width:120}}>
