@@ -601,6 +601,7 @@ const strip = (s) => String(s||"").trim();
 const keyNorm = (s) => strip(s).toLowerCase().replace(/[^a-z0-9]+/g,"");
 const LESS_IS_BETTER = new Set(["Conceded/90","Goals Allowed/90","G/Sh","G/SoT","Possession Lost/90","Fouls","Offsides","Mistakes Leading to Goal","Possession Lost"]);
 let RUNTIME_LESS_IS_BETTER = new Set(LESS_IS_BETTER);
+let RUNTIME_CUSTOM_ARCHETYPE = null;
 const tf = (v, n = 1) => (Number.isFinite(v) ? Number(v).toFixed(n) : "-");
 const clamp100 = (x) => Math.max(0, Math.min(100, x));
 const decileBadge = (pct)=> pct>=90?"Top 10%": pct>=75?"Top 25%": pct>=50?"Top 50%": pct>=25?"Below Median":"Bottom 25%";
@@ -780,6 +781,47 @@ function applyCustomMetricWeight(node, weight) {
     left: node,
     right: { type: "value", value: numericWeight, label: tf(numericWeight, 2) }
   };
+}
+
+function getRuntimeCustomArchetype() {
+  const custom = RUNTIME_CUSTOM_ARCHETYPE;
+  if (!custom || !custom.name || !custom.weights) return null;
+  return custom;
+}
+
+function getRuntimeRoleNames() {
+  const names = [...Object.keys(ROLE_BOOK)];
+  const custom = getRuntimeCustomArchetype();
+  if (custom?.name && !names.some(roleName => keyNorm(roleName) === keyNorm(custom.name))) {
+    names.push(custom.name);
+  }
+  return names;
+}
+
+function getRuntimeRoleSpec(roleName) {
+  if (roleName && typeof roleName === "object" && roleName.weights) return roleName;
+  const custom = getRuntimeCustomArchetype();
+  if (typeof roleName === "string" && custom && keyNorm(roleName) === keyNorm(custom.name)) {
+    return custom;
+  }
+  if (typeof roleName === "string" && ROLE_BOOK[roleName]) {
+    return ROLE_BOOK[roleName];
+  }
+  return null;
+}
+
+function getRuntimeRoleBaseline(roleName) {
+  const spec = getRuntimeRoleSpec(roleName);
+  if (spec?.baseline) return Array.isArray(spec.baseline) ? spec.baseline : [];
+  if (typeof roleName === "string" && ROLE_BOOK[roleName]) return ROLE_BASELINES[roleName] || [];
+  return [];
+}
+
+function getRuntimeRoleWeights(roleName) {
+  const spec = getRuntimeRoleSpec(roleName);
+  if (spec?.weights) return spec.weights;
+  if (typeof roleName === "string" && ROLE_BOOK[roleName]) return ROLE_WEIGHTS[roleName] || null;
+  return null;
 }
 
 function normalizeCustomMetricSteps(metric) {
@@ -1560,15 +1602,15 @@ function buildRolePercentileByRole(rows, fallbackRows = null) {
   const sourceRows = Array.isArray(rows) ? rows : [];
   const fallback = Array.isArray(fallbackRows) ? fallbackRows : sourceRows;
   const out = {};
-  for (const role of Object.keys(ROLE_BOOK)) {
-    const baseline = ROLE_BASELINES[role] || [];
+  for (const role of getRuntimeRoleNames()) {
+    const baseline = getRuntimeRoleBaseline(role);
     let roleRows = sourceRows;
     if (baseline.length) {
       roleRows = sourceRows.filter(r => sharesAny(expandFMPositions(getCell(r, "Pos")), baseline));
     }
     // Keep role percentiles meaningful when the cohort is tiny.
     if (roleRows.length <= 1) roleRows = fallback;
-    const roleStats = ROLE_STATS[role] || Object.keys(ROLE_WEIGHTS[role] || {});
+    const roleStats = getSimilarityStatsForRole(role);
     out[role] = buildPercentileIndex(roleRows, roleStats);
   }
   return out;
@@ -1590,7 +1632,7 @@ function percentileFor(pctIndex, stat, value) {
 
 /* ===================== Role scoring ===================== */
 function roleScoreFor(row, roleName, pctIndex, rolePctByRole = null, metricResolver = numCell) {
-  const weights = typeof roleName === "string" ? ROLE_WEIGHTS[roleName] : (roleName?.weights||null);
+  const weights = getRuntimeRoleWeights(roleName);
   if (!weights) return 0;
   const scoringPctIndex = (typeof roleName === "string" && rolePctByRole && rolePctByRole[roleName])
     ? rolePctByRole[roleName]
@@ -1618,8 +1660,8 @@ function roleScoreFor(row, roleName, pctIndex, rolePctByRole = null, metricResol
 function bestNearRole(row, pctIndex, rolePctByRole = null) {
   const tokens = expandFMPositions(getCell(row, "Pos"));
   let best = null, bestScore = -1;
-  for (const role of Object.keys(ROLE_BOOK)) {
-    const baseline = ROLE_BASELINES[role] || [];
+  for (const role of getRuntimeRoleNames()) {
+    const baseline = getRuntimeRoleBaseline(role);
     if (!sharesAny(tokens, baseline)) continue;
     const sc = roleScoreFor(row, role, pctIndex, rolePctByRole);
     if (sc > bestScore) { bestScore = sc; best = role; }
@@ -1645,7 +1687,7 @@ function cosineSimilarity(valuesA, valuesB) {
 }
 
 function getSimilarityScopeRole(scope, bestRole, sidebarRole, overallRole = "Overall") {
-  const overallKey = Object.keys(ROLE_BOOK).find(roleName => keyNorm(roleName) === keyNorm(overallRole)) || overallRole;
+  const overallKey = getRuntimeRoleNames().find(roleName => keyNorm(roleName) === keyNorm(overallRole)) || overallRole;
   switch (scope) {
     case "sidebarRole":
       return sidebarRole || bestRole || overallKey;
@@ -1658,12 +1700,15 @@ function getSimilarityScopeRole(scope, bestRole, sidebarRole, overallRole = "Ove
 }
 
 function getSimilarityStatsForRole(roleName) {
-  const stats = ROLE_STATS[roleName] || [];
+  const custom = getRuntimeCustomArchetype();
+  const stats = (custom && keyNorm(roleName) === keyNorm(custom.name))
+    ? Object.keys(custom.weights || {})
+    : (ROLE_STATS[roleName] || []);
   return stats.length ? stats : ALL_ROLE_STATS;
 }
 
 function getSimilarityBaselineForRole(roleName, sourceRow) {
-  const baseline = ROLE_BASELINES[roleName] || ROLE_BOOK[roleName]?.baseline || [];
+  const baseline = getRuntimeRoleBaseline(roleName);
   if (baseline.length) return baseline;
   return expandFMPositions(getCell(sourceRow, "Pos"));
 }
@@ -1796,8 +1841,8 @@ function leagueGroupOf(txt){
 // Enhanced role versatility calculation
 function calculateRoleVersatility(row, pctIndex, posFamily, rolePctByRole = null) {
   const tokens = expandFMPositions(getCell(row, "Pos"));
-  const applicableRoles = Object.keys(ROLE_BOOK).filter(role => {
-    const baseline = ROLE_BASELINES[role] || [];
+  const applicableRoles = getRuntimeRoleNames().filter(role => {
+    const baseline = getRuntimeRoleBaseline(role);
     return sharesAny(tokens, baseline);
   });
   
@@ -2560,8 +2605,8 @@ function analyzeClubContext(managedClub, rows, pctIndex, rolePctByRole = null) {
     };
 
     // Calculate scores for ALL roles this player can play
-    Object.keys(ROLE_BOOK).forEach(roleName => {
-      const baseline = ROLE_BASELINES[roleName] || [];
+    getRuntimeRoleNames().forEach(roleName => {
+      const baseline = getRuntimeRoleBaseline(roleName);
       if (sharesAny(tokens, baseline)) {
         const roleScore = roleScoreFor(player, roleName, pctIndex, rolePctByRole) || 0;
         playerData.allRoleScores[roleName] = roleScore;
@@ -2979,12 +3024,12 @@ export default function App(){
 
   /* ---------- Selections ---------- */
   const [player, setPlayer] = useStickyState("sel:player", "");
-  const [role, setRole] = useStickyState("sel:role", Object.keys(ROLE_STATS)[0] || "");
+  const [role, setRole] = useStickyState("sel:role", getRuntimeRoleNames()[0] || Object.keys(ROLE_STATS)[0] || "");
   const [roleSelectionMode, setRoleSelectionMode] = useStickyState("sel:roleSelectionMode", "Persist");
 
   /* ---------- Scatter & stat selects ---------- */
-  const [roleX, setRoleX] = useStickyState("scatter:roleX", Object.keys(ROLE_STATS)[0] || "");
-  const [roleY, setRoleY] = useStickyState("scatter:roleY", Object.keys(ROLE_STATS)[1] || Object.keys(ROLE_STATS)[0] || "");
+  const [roleX, setRoleX] = useStickyState("scatter:roleX", getRuntimeRoleNames()[0] || Object.keys(ROLE_STATS)[0] || "");
+  const [roleY, setRoleY] = useStickyState("scatter:roleY", getRuntimeRoleNames()[1] || getRuntimeRoleNames()[0] || Object.keys(ROLE_STATS)[1] || Object.keys(ROLE_STATS)[0] || "");
 
   const allStats = useMemo(()=> Array.from(new Set([ ...Object.values(ROLE_BOOK).flatMap(r => Object.keys(r.weights || {})) ])), []);
   const [scatterMetricScope, setScatterMetricScope] = useStickyState("scatter:metricScope", "All Database Metrics");
@@ -3075,9 +3120,103 @@ export default function App(){
   const [cmShowWeights, setCmShowWeights] = useState(false);
 
   const cmNameInputRef = useRef(null);
+  
+  // Custom archetype helpers
+  const commitCaName = () => {
+    const val = (caNameInputRef.current?.value || "").trim();
+    return val;
+  };
+  const startEditArchetype = (arch) => {
+    setCaEditId(arch.id);
+    setCaName(arch.name);
+    setCaColor(arch.color || "#4f46e5");
+    setCaBaseline(arch.baseline || ["M (C)"]);
+    setCaWeights(arch.weights || {});
+  };
+  const cancelCaEdit = () => {
+    setCaEditId("");
+    setCaName("");
+    setCaColor("#4f46e5");
+    setCaBaseline(["M (C)"]);
+    setCaWeights({});
+  };
+  const addArchetype = () => {
+    const name = commitCaName();
+    if (!name) {
+      alert('Please enter a name for the archetype');
+      return;
+    }
+    if (caEditId) {
+      setArchetypes(prev => prev.map(a => a.id === caEditId ? {
+        id: a.id,
+        name,
+        color: caColor,
+        baseline: caBaseline,
+        weights: caWeights,
+        exported: a.exported
+      } : a));
+      cancelCaEdit();
+    } else {
+      const newId = `ca-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      setArchetypes(prev => [...prev, {
+        id: newId,
+        name,
+        color: caColor,
+        baseline: caBaseline,
+        weights: caWeights
+      }]);
+      setSelectedArchetypeId(newId);
+      cancelCaEdit();
+    }
+  };
+  const removeArchetype = (id) => {
+    setArchetypes(prev => prev.filter(a => a.id !== id));
+    if (selectedArchetypeId === id) {
+      const remaining = archetypes.filter(a => a.id !== id);
+      setSelectedArchetypeId(remaining.length > 0 ? remaining[0].id : "");
+    }
+  };
+  const exportArchetypes = () => {
+    const data = { archetypes, version: "1.0" };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'custom_archetypes.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const importArchetypes = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result);
+        if (Array.isArray(data.archetypes)) {
+          const imported = data.archetypes.map(a => ({
+            ...a,
+            id: a.id || `ca-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          }));
+          setArchetypes(prev => [...prev, ...imported]);
+          if (imported.length > 0) setSelectedArchetypeId(imported[0].id);
+        }
+      } catch (err) {
+        alert('Invalid archetype file format');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
-  const [customName, setCustomName] = useState("Custom Archetype");
-  const customNameInputRef = useRef(null);
+  const [archetypes, setArchetypes] = useStickyState("custom:archetypes", []);
+  const [selectedArchetypeId, setSelectedArchetypeId] = useStickyState("custom:selectedArchetypeId", "");
+  const [caEditId, setCaEditId] = useState("");
+  const [caName, setCaName] = useState("");
+  const [caColor, setCaColor] = useState("#4f46e5");
+  const [caBaseline, setCaBaseline] = useState(["M (C)"]);
+  const [caWeights, setCaWeights] = useState({});
+  const caNameInputRef = useRef(null);
 
   const addStatFilter = useCallback(() => {
     const fallbackStat = metricBuilderOptions.includes("Goals")
@@ -3152,8 +3291,18 @@ export default function App(){
   const [compScope, setCompScope] = useStickyState("comp:scope", "Filtered Cohort");
 
   /* ---------- Custom archetype ---------- */
-  const [customBaseline, setCustomBaseline] = useStickyState("custom:baseline", ["M (C)"]);
-  const [customWeights, setCustomWeights] = useStickyState("custom:weights", { "Progressive Passes/90": 1.4, "Key Passes/90": 1.2, "Dribbles/90": 1.2 });
+  useEffect(() => {
+    const selected = archetypes.find(a => a.id === selectedArchetypeId);
+    RUNTIME_CUSTOM_ARCHETYPE = selected ? {
+      name: selected.name || "Custom Archetype",
+      baseline: Array.isArray(selected.baseline) ? selected.baseline : [],
+      weights: selected.weights && typeof selected.weights === "object" ? selected.weights : {}
+    } : {
+      name: "",
+      baseline: [],
+      weights: {}
+    };
+  }, [archetypes, selectedArchetypeId]);
 
   // Always start each page load on the onboarding tutorial.
   useEffect(() => {
@@ -3367,12 +3516,6 @@ export default function App(){
     setCmName(next);
     return next;
   }, [cmName]);
-
-  const commitCustomName = useCallback(() => {
-    const next = strip(customNameInputRef.current?.value ?? customName) || "Custom Archetype";
-    setCustomName(next);
-    return next;
-  }, [customName]);
 
   const addCustomMetric = useCallback(() => {
     const name = commitCmName();
@@ -3737,9 +3880,9 @@ export default function App(){
     const selectedRow = rowByName.get(player);
     if (!selectedRow) return [];
     const tokens = expandFMPositions(getCell(selectedRow, "Pos"));
-    const ranked = Object.keys(ROLE_BOOK)
+    const ranked = getRuntimeRoleNames()
       .filter(roleName => {
-        const baseline = ROLE_BASELINES[roleName] || [];
+        const baseline = getRuntimeRoleBaseline(roleName);
         return sharesAny(tokens, baseline);
       })
       .map(roleName => ({ roleName, score: roleScoreOfRow(selectedRow, roleName) }))
@@ -3805,11 +3948,11 @@ export default function App(){
     if (!r) return <div className="card"><div className="cardBody">Select a player</div></div>;
 
     const br = bestRoleCache.get(player) || { role:null, score:0 };
-    const cachedRole = br.role || Object.keys(ROLE_STATS)[0] || "";
+    const cachedRole = br.role || getRuntimeRoleNames()[0] || Object.keys(ROLE_STATS)[0] || "";
     
     // Calculate role scores fresh to ensure consistency with role matrix
-    const roleScores = Object.keys(ROLE_BOOK).map(roleName => {
-      const baseline = ROLE_BASELINES[roleName] || [];
+    const roleScores = getRuntimeRoleNames().map(roleName => {
+      const baseline = getRuntimeRoleBaseline(roleName);
       if (!sharesAny(expandFMPositions(getCell(r,"Pos")), baseline)) return null;
       return { roleName, score: roleScoreFor(r, roleName, roleScorePctIndex, roleScorePctByRole) || 0 };
     }).filter(Boolean).sort((a,b)=>b.score-a.score);
@@ -3859,19 +4002,19 @@ export default function App(){
     // Use calculated roleScores for top roles
     const topRoles = roleScores.slice(0,2).map(x => x.roleName);
     const topRoleA = topRoles[0] || bestRole;
-    const topRoleB = topRoles[1] || Object.keys(ROLE_STATS)[0] || "";
-    const matrixRoleA = Object.keys(ROLE_BOOK).includes(profileMatrixRoleA) ? profileMatrixRoleA : topRoleA;
-    const matrixRoleB = Object.keys(ROLE_BOOK).includes(profileMatrixRoleB) ? profileMatrixRoleB : topRoleB;
-    const matrixRoleABaseline = ROLE_BASELINES[matrixRoleA] || [];
-    const matrixRoleBBaseline = ROLE_BASELINES[matrixRoleB] || [];
+    const topRoleB = topRoles[1] || getRuntimeRoleNames()[0] || Object.keys(ROLE_STATS)[0] || "";
+    const matrixRoleA = getRuntimeRoleNames().includes(profileMatrixRoleA) ? profileMatrixRoleA : topRoleA;
+    const matrixRoleB = getRuntimeRoleNames().includes(profileMatrixRoleB) ? profileMatrixRoleB : topRoleB;
+    const matrixRoleABaseline = getRuntimeRoleBaseline(matrixRoleA);
+    const matrixRoleBBaseline = getRuntimeRoleBaseline(matrixRoleB);
     const matrixRelevantTokens = new Set([...matrixRoleABaseline, ...matrixRoleBBaseline].map(normToken));
 
     const selectableRoles = roleScores.map(x => x.roleName);
-    const roleOptions = selectableRoles.length ? selectableRoles : Object.keys(ROLE_STATS);
+    const roleOptions = selectableRoles.length ? selectableRoles : getRuntimeRoleNames();
     const currentProfileRole = roleOptions.includes(profileRole) ? profileRole : (roleOptions[0] || bestRole);
     const roleScoreMap = new Map(roleScores.map(x => [x.roleName, x.score]));
     const currentProfileRoleScore = roleScoreMap.get(currentProfileRole) ?? bestScore;
-    const statsProfileRole = ROLE_STATS[currentProfileRole] || [];
+    const statsProfileRole = getSimilarityStatsForRole(currentProfileRole);
 
     const mins = numerify(r["Minutes"]);
     const age  = numerify(r["Age"]);
@@ -4163,10 +4306,10 @@ export default function App(){
               <div style={{fontWeight:800, fontSize: "14px"}}>Role Matrix - {roleMatrixForProfile.rx} vs {roleMatrixForProfile.ry}</div>
               <div style={{display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap"}}>
                 <select className="input" style={{minWidth: 190, padding: "7px 10px"}} value={matrixRoleA} onChange={e => setProfileMatrixRoleA(e.target.value)}>
-                  {Object.keys(ROLE_BOOK).map(roleName => <option key={roleName} value={roleName}>{roleName}</option>)}
+                  {getRuntimeRoleNames().map(roleName => <option key={roleName} value={roleName}>{roleName}</option>)}
                 </select>
                 <select className="input" style={{minWidth: 190, padding: "7px 10px"}} value={matrixRoleB} onChange={e => setProfileMatrixRoleB(e.target.value)}>
-                  {Object.keys(ROLE_BOOK).map(roleName => <option key={roleName} value={roleName}>{roleName}</option>)}
+                  {getRuntimeRoleNames().map(roleName => <option key={roleName} value={roleName}>{roleName}</option>)}
                 </select>
                 <select className="input" style={{minWidth: 210, padding: "7px 10px"}} value={profileMatrixPool} onChange={e => setProfileMatrixPool(e.target.value)}>
                   <option value="Positionally Relevant">Positionally Relevant</option>
@@ -4245,7 +4388,7 @@ export default function App(){
   function RadarMode(){
     const r = rowByName.get(player);
     if (!r) return <div className="card"><div className="cardBody">Select a player</div></div>;
-    const stats = ROLE_STATS[role] || [];
+    const stats = getSimilarityStatsForRole(role);
     const series = [{
       name: `${player} - ${role}`,
       color: "var(--accent)",
@@ -4260,7 +4403,7 @@ export default function App(){
         <div className="cardHead" style={{gap:12}}>
           <div style={{fontWeight:800, fontSize: "1.1em"}}>Radar Chart - {player}</div>
           <select className="input" style={{minWidth:200}} value={role} onChange={e=>setRole(e.target.value)}>
-            {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
+            {getRuntimeRoleNames().map(k => <option key={k} value={k}>{k}</option>)}
           </select>
           <div className="badge">Percentiles vs {compScope}</div>
         </div>
@@ -4323,11 +4466,11 @@ export default function App(){
               <div style={{fontWeight:800, fontSize: "1.1em"}}>Role Matrix - {roleX} vs {roleY}</div>
           <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
             <select className="input" style={{minWidth:200}} value={roleX} onChange={e=>setRoleX(e.target.value)}>
-              {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
+              {getRuntimeRoleNames().map(k => <option key={k} value={k}>{k}</option>)}
             </select>
             <span style={{color:"var(--muted)"}}>vs</span>
             <select className="input" style={{minWidth:200}} value={roleY} onChange={e=>setRoleY(e.target.value)}>
-              {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
+              {getRuntimeRoleNames().map(k => <option key={k} value={k}>{k}</option>)}
             </select>
           </div>
         </div>
@@ -4613,7 +4756,7 @@ export default function App(){
   /* ---------- Leaders / Best Roles / Stat Leaders ---------- */
   function roleLeadersData(roleName, limit=30){
     // Get relevant positions for this role
-    const rolePositions = ROLE_BOOK[roleName]?.baseline || [];
+    const rolePositions = getRuntimeRoleBaseline(roleName);
     const relevantPositions = new Set(rolePositions);
     const isStrikerRole = typeof roleName === "string" && roleName.startsWith("ST -");
     
@@ -4678,8 +4821,8 @@ export default function App(){
     if (!r) return <div className="card"><div className="cardBody">Select a player</div></div>;
     
     // Get current player's top roles instead of everyone's best roles
-    const playerRoles = Object.keys(ROLE_BOOK).map(roleName => {
-      const baseline = ROLE_BASELINES[roleName] || [];
+    const playerRoles = getRuntimeRoleNames().map(roleName => {
+      const baseline = getRuntimeRoleBaseline(roleName);
       if (!sharesAny(expandFMPositions(getCell(r,"Pos")), baseline)) return null;
       return { roleName, score: roleScoreFor(r, roleName, roleScorePctIndex, roleScorePctByRole) || 0 };
     }).filter(Boolean).sort((a,b)=>b.score-a.score).slice(0, 10);
@@ -4722,158 +4865,190 @@ export default function App(){
 
   /* ---------- Custom Archetype Mode ---------- */
   function CustomArchetypeMode(){
-    const label = customName || "Custom Archetype";
-    const weights = customWeights;
-    const baseline = customBaseline;
     const archetypeStatOptions = Array.from(new Set([...metricBuilderOptions, ...customMetricNames]))
       .sort((a, b) => (LABELS.get(a) || a).localeCompare(LABELS.get(b) || b));
 
-    const leaders = filteredRows
-      .filter(r => sharesAny(expandFMPositions(r["Pos"]), baseline))
-      .map(r => ({ r, score: roleScoreFor(r, { weights, baseline }, pctIndex, null, metricValue) }))
-      .map(x => ({ name:x.r["Name"], club:x.r["Club"], pos:(expandFMPositions(x.r["Pos"])[0]||""), score:x.score }))
-      .filter(x => Number.isFinite(x.score))
-      .sort((a,b)=>b.score-a.score)
-      .slice(0, 30);
+    const selectedArchetype = archetypes.find(a => a.id === selectedArchetypeId);
+    const leaders = selectedArchetype && caBaseline.length
+      ? filteredRows
+        .filter(r => sharesAny(expandFMPositions(r["Pos"]), caBaseline))
+        .map(r => ({ r, score: roleScoreFor(r, { weights: caWeights, baseline: caBaseline }, pctIndex, null, metricValue) }))
+        .map(x => ({ name:x.r["Name"], club:x.r["Club"], pos:(expandFMPositions(x.r["Pos"])[0]||""), score:x.score }))
+        .filter(x => Number.isFinite(x.score))
+        .sort((a,b)=>b.score-a.score)
+        .slice(0, 30)
+      : [];
 
     const items = leaders.map(l => ({ label: `${l.name} - ${l.pos} • ${l.club||"-"}`, value: Number(l.score.toFixed(2)) }));
 
     const toggleBaseline = (p) => {
-      setCustomBaseline(prev => prev.includes(p) ? prev.filter(x=>x!==p) : [...prev, p]);
+      setCaBaseline(prev => prev.includes(p) ? prev.filter(x=>x!==p) : [...prev, p]);
     };
     const addStat = () => {
-      const pick = archetypeStatOptions.find(s => !(s in customWeights));
-      if (pick) setCustomWeights({...customWeights, [pick]: 1.0});
+      const pick = archetypeStatOptions.find(s => !(s in caWeights));
+      if (pick) setCaWeights({...caWeights, [pick]: 1.0});
     };
     const removeStat = (s) => {
-      const next = {...customWeights}; delete next[s]; setCustomWeights(next);
+      const next = {...caWeights}; delete next[s]; setCaWeights(next);
     };
 
-    // Import/Export functionality
-    const exportArchetype = () => {
-      const archetype = {
-        name: customName,
-        baseline: customBaseline,
-        weights: customWeights,
-        version: "1.0"
-      };
-      const blob = new Blob([JSON.stringify(archetype, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${customName.replace(/[^a-zA-Z0-9]/g, '_')}_archetype.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    };
-
-    const importArchetype = (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const data = JSON.parse(event.target?.result);
-          if (data.name) {
-            const nextName = strip(data.name) || "Custom Archetype";
-            setCustomName(nextName);
-          }
-          if (data.baseline) setCustomBaseline(data.baseline);
-          if (data.weights) setCustomWeights(data.weights);
-        } catch (err) {
-          alert('Invalid archetype file format');
-        }
-      };
-      reader.readAsText(file);
-      e.target.value = ''; // Reset file input
-    };
-
-    const addToRoleBook = () => {
-      if (!customName.trim()) {
-        alert('Please enter a name for the archetype');
-        return;
-      }
-      // Add to existing role options (this would persist in localStorage via useStickyState)
-      const newRoleKey = `Custom: ${customName}`;
-      // Note: This would require modifying ROLE_BOOK, but for now we'll just show it works
-      alert(`"${customName}" would be added to role selection (implementation depends on how you want to persist custom roles)`);
-    };
+    // Check if archetype uses any custom metrics that aren't imported
+    const usedCustomMetrics = Object.keys(caWeights).filter(s => customMetricNames.includes(s));
+    const missingMetrics = usedCustomMetrics.filter(m => !customMetrics.some(cm => cm.name === m));
 
     return (
       <>
         <div className="card">
-          <div className="cardHead" style={{gap:12}}>
-            <div style={{fontWeight:800}}>Custom Archetype - Editor</div>
-            <div style={{display:"flex", gap:8}}>
-              <button className="btn ghost tight" onClick={exportArchetype}>Export</button>
+          <div className="cardHead" style={{gap:12, flexWrap:"wrap"}}>
+            <div style={{fontWeight:800, fontSize: "1.1em"}}>Custom Archetypes</div>
+            <div className="badge">{archetypes.length} defined</div>
+            <div style={{marginLeft:"auto", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+              <button className="btn ghost tight" onClick={exportArchetypes}>Export JSON</button>
               <label className="btn ghost tight" style={{cursor:"pointer"}}>
-                Import
-                <input type="file" accept=".json" onChange={importArchetype} style={{display:"none"}} />
+                Import JSON
+                <input type="file" accept=".json" onChange={importArchetypes} style={{display:"none"}} />
               </label>
-              <button className="btn ghost tight" onClick={addToRoleBook}>Add to Roles</button>
+              {caEditId ? (
+                <button className="btn" onClick={cancelCaEdit}>Cancel Edit</button>
+              ) : null}
             </div>
           </div>
-          <div className="cardBody">
-            <div className="row" style={{gap:12, alignItems:"flex-start"}}>
-              <div className="col">
+          <div className="cardBody" style={{display:"flex", flexDirection:"column", gap:12}}>
+            {archetypes.length > 0 && (
+              <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+                <div className="col" style={{minWidth:220}}>
+                  <label className="lbl">Active archetype</label>
+                  <select className="input" value={selectedArchetypeId} onChange={e=>setSelectedArchetypeId(e.target.value)}>
+                    <option value="">-- None --</option>
+                    {archetypes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+              <div className="col" style={{minWidth:180}}>
                 <label className="lbl">Name</label>
                 <input
                   className="input"
-                  ref={customNameInputRef}
-                  defaultValue={customName}
-                  key={customName}
-                  onBlur={() => setCustomName(commitCustomName())}
+                  type="text"
+                  autoComplete="off"
+                  ref={caNameInputRef}
+                  defaultValue={caName}
+                  key={caEditId || "ca-new"}
+                  onBlur={() => setCaName(commitCaName())}
                   onKeyDown={e => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      setCustomName(commitCustomName());
+                      setCaName(commitCaName());
                       e.currentTarget.blur();
                     }
                   }}
+                  placeholder="e.g. Creative Midfielder"
                 />
               </div>
-              <div className="col">
-                <label className="lbl">Baseline positions</label>
-                <div className="chipRow">
-                  {POS14.map(p => (
-                    <button key={p} className={`chip ${customBaseline.includes(p)?"active":""}`} onClick={()=>toggleBaseline(p)}>{p}</button>
-                  ))}
+              <div style={{width:120}}>
+                <label className="lbl">Color</label>
+                <input className="input" type="color" value={caColor} onChange={e=>setCaColor(e.target.value)} />
+              </div>
+              {caEditId ? (
+                <div style={{display:"flex", gap:8}}>
+                  <button className="btn" type="button" onClick={addArchetype}>Save</button>
+                  <button className="btn ghost" type="button" onClick={cancelCaEdit}>Cancel</button>
                 </div>
+              ) : (
+                <button className="btn" type="button" onClick={addArchetype}>Add Archetype</button>
+              )}
+            </div>
+
+            <div className="tutorialCallout">
+              <div className="tutorialNoteTitle">How Weights Work</div>
+              <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
+                Weights multiply each stat before role scoring is calculated. A weight of 1.0 means normal behavior. A weight of 1.5 means "emphasize this stat 50% more." Leave all weights at 1.0 for equal importance.
+              </div>
+              <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
+                <strong style={{color:"var(--text)"}}>Custom Metrics:</strong> If this archetype uses custom metrics, make sure you have imported them on the <em>Custom Metrics</em> screen first.
               </div>
             </div>
 
-            <div style={{marginTop:10}}>
+            {missingMetrics.length > 0 && (
+              <div style={{padding:10, background:"rgba(239, 68, 68, 0.1)", border:"1px solid rgba(239, 68, 68, 0.3)", borderRadius:6}}>
+                <div style={{fontSize:12, fontWeight:700, color:"#dc2626", marginBottom:6}}>⚠ Missing Custom Metrics</div>
+                <div style={{fontSize:12, color:"var(--muted)"}}>
+                  This archetype uses custom metrics that haven't been imported: <strong>{missingMetrics.join(", ")}</strong>. 
+                  Please import them on the <em>Custom Metrics</em> screen.
+                </div>
+              </div>
+            )}
+
+            <div style={{display:"flex", flexDirection:"column", gap:8}}>
+              <div className="row" style={{alignItems:"center"}}>
+                <div style={{fontWeight:700}}>Baseline positions</div>
+              </div>
+              <div className="chipRow">
+                {POS14.map(p => (
+                  <button key={p} className={`chip ${caBaseline.includes(p)?"active":""}`} onClick={()=>toggleBaseline(p)}>{p}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{display:"flex", flexDirection:"column", gap:8}}>
               <div className="row" style={{alignItems:"center"}}>
                 <div style={{fontWeight:700}}>Stats & weights</div>
                 <button className="btn ghost tight" style={{marginLeft:"auto"}} onClick={addStat}>+ Add stat</button>
               </div>
-              {Object.keys(customWeights).map(s => (
-                <div key={s} className="row">
-                  <div className="col">
+              {Object.keys(caWeights).map(s => (
+                <div key={s} className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
+                  <div className="col" style={{minWidth:180}}>
                     <select className="input" value={s} onChange={(e)=>{
                       const val = e.target.value;
-                      const w = customWeights[s];
-                      const next = {...customWeights}; delete next[s]; next[val] = w; setCustomWeights(next);
+                      const w = caWeights[s];
+                      const next = {...caWeights}; delete next[s]; next[val] = w; setCaWeights(next);
                     }}>
                       {archetypeStatOptions.map(st => <option key={st} value={st}>{LABELS.get(st)||st}</option>)}
                     </select>
                   </div>
                   <div style={{width:120}}>
-                    <input className="input" type="number" step={numericStep(customWeights[s], 0.1)} value={customWeights[s]}
-                      onChange={(e)=> setCustomWeights({...customWeights, [s]: Number(e.target.value)||0})}/>
+                    <label className="lbl">Weight</label>
+                    <input className="input" type="number" step={numericStep(caWeights[s], 0.1)} value={caWeights[s]}
+                      onChange={(e)=> setCaWeights({...caWeights, [s]: Number(e.target.value)||0})}/>
                   </div>
                   <button className="btn ghost alt tight" onClick={()=>removeStat(s)}>Remove</button>
                 </div>
               ))}
+              {!Object.keys(caWeights).length && (
+                <div style={{fontSize:12, color:"var(--muted)"}}>No stats added yet</div>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="card">
-          <div className="cardHead"><div style={{fontWeight:800}}>Custom Archetype - Leaders ({label})</div></div>
-          <div className="cardBody">
-            <HBar items={items} titleFmt={(v)=>v.toFixed(2)} valueMax={100}/>
+        {archetypes.length > 0 && (
+          <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))", gap:8}}>
+            {archetypes.map(a => (
+              <div key={a.id} style={{display:"flex", alignItems:"center", gap:8, border:"1px solid var(--cardBorder)", borderRadius:8, padding:"8px 10px", background: selectedArchetypeId === a.id ? "rgba(79, 70, 229, 0.05)" : "transparent"}}>
+                <div style={{width:12, height:12, borderRadius:3, background:a.color, border:"1px solid rgba(0,0,0,0.25)"}} />
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{a.name}</div>
+                  <div style={{fontSize:11, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{a.baseline.join(", ")} • {Object.keys(a.weights || {}).length} stats</div>
+                </div>
+                <div style={{display:"flex", gap:8}}>
+                  <button className="btn ghost alt tight" onClick={()=>startEditArchetype(a)}>Edit</button>
+                  <button className="btn ghost alt tight" onClick={()=>removeArchetype(a.id)}>Remove</button>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+        )}
+
+        {selectedArchetype && items.length > 0 && (
+          <div className="card">
+            <div className="cardHead"><div style={{fontWeight:800}}>Leaders - {selectedArchetype.name}</div></div>
+            <div className="cardBody">
+              <HBar items={items} titleFmt={(v)=>v.toFixed(2)} valueMax={100}/>
+            </div>
+          </div>
+        )}
       </>
     );
   }
@@ -4974,7 +5149,7 @@ export default function App(){
         ageRange: [transferMinAge, transferMaxAge],
         minRating: transferMinRating,
         managedClub,
-        roleBookSize: Object.keys(ROLE_BOOK).length,
+        roleBookSize: getRuntimeRoleNames().length,
         pctIndexSize: pctIndex.size,
         clubContextExists: !!clubContext
       });
@@ -4987,7 +5162,7 @@ export default function App(){
         console.log('Target roles (specific role selected):', targetRoles);
       } else if (findUnderrated) {
         // Include ALL possible roles from the role book, not just current squad roles
-        targetRoles = Object.keys(ROLE_BOOK);
+        targetRoles = getRuntimeRoleNames();
         console.log('Target roles (all roles from ROLE_BOOK - underrated mode):', targetRoles.length, 'roles');
         console.log('First 10 roles:', targetRoles.slice(0, 10));
       } else {
@@ -5005,7 +5180,7 @@ export default function App(){
         
         if (targetRoles.length === 0) {
           console.log('No roles need improvement - switching to underrated mode for this search');
-          targetRoles = Object.keys(ROLE_BOOK);
+          targetRoles = getRuntimeRoleNames();
         }
       }
       
@@ -5568,7 +5743,7 @@ export default function App(){
                   onChange={e => setTargetSpecificRole(e.target.value)}
                 >
                   <option value="">All suitable roles</option>
-                  {Object.keys(ROLE_BOOK).sort().map(role => (
+                  {getRuntimeRoleNames().sort().map(role => (
                     <option key={role} value={role}>{role}</option>
                   ))}
                 </select>
@@ -5885,7 +6060,7 @@ export default function App(){
                 
                 <label className="lbl">Archetype</label>
                 <select className="input" value={role} onChange={e=>setRole(e.target.value)}>
-                  {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
+                  {getRuntimeRoleNames().map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
 
                 <label className="lbl">Role Selection Behavior</label>
@@ -5899,10 +6074,10 @@ export default function App(){
 
                 <label className="lbl">Matrix roles</label>
                 <select className="input" value={roleX} onChange={e=>setRoleX(e.target.value)}>
-                  {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
+                  {getRuntimeRoleNames().map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
                 <select className="input" value={roleY} onChange={e=>setRoleY(e.target.value)}>
-                  {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
+                  {getRuntimeRoleNames().map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
 
                 <label className="lbl">Scatter metric source</label>
@@ -6561,7 +6736,7 @@ export default function App(){
               <div className="col">
                 <label className="lbl">Role shortcut</label>
                 <select className="input" value={role} onChange={e=>setRole(e.target.value)}>
-                  {Object.keys(ROLE_STATS).map(k => <option key={k} value={k}>{k}</option>)}
+                  {getRuntimeRoleNames().map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
               </div>
             </div>
