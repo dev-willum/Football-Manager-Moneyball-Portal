@@ -601,7 +601,7 @@ const strip = (s) => String(s||"").trim();
 const keyNorm = (s) => strip(s).toLowerCase().replace(/[^a-z0-9]+/g,"");
 const LESS_IS_BETTER = new Set(["Conceded/90","Goals Allowed/90","G/Sh","G/SoT","Possession Lost/90","Fouls","Offsides","Mistakes Leading to Goal","Possession Lost"]);
 let RUNTIME_LESS_IS_BETTER = new Set(LESS_IS_BETTER);
-let RUNTIME_CUSTOM_ARCHETYPE = null;
+let RUNTIME_CUSTOM_ARCHETYPES = [];
 const tf = (v, n = 1) => (Number.isFinite(v) ? Number(v).toFixed(n) : "-");
 const clamp100 = (x) => Math.max(0, Math.min(100, x));
 const decileBadge = (pct)=> pct>=90?"Top 10%": pct>=75?"Top 25%": pct>=50?"Top 50%": pct>=25?"Below Median":"Bottom 25%";
@@ -783,24 +783,34 @@ function applyCustomMetricWeight(node, weight) {
   };
 }
 
-function getRuntimeCustomArchetype() {
-  const custom = RUNTIME_CUSTOM_ARCHETYPE;
-  if (!custom || !custom.name || !custom.weights) return null;
-  return custom;
+function getRuntimeCustomArchetypes() {
+  return Array.isArray(RUNTIME_CUSTOM_ARCHETYPES)
+    ? RUNTIME_CUSTOM_ARCHETYPES.filter(custom => custom && custom.name && custom.weights)
+    : [];
+}
+
+function getRuntimeCustomArchetype(roleName = null) {
+  const customs = getRuntimeCustomArchetypes();
+  if (!customs.length) return null;
+  if (typeof roleName === "string" && roleName.trim()) {
+    return customs.find(custom => keyNorm(roleName) === keyNorm(custom.name)) || null;
+  }
+  return customs[0] || null;
 }
 
 function getRuntimeRoleNames() {
   const names = [...Object.keys(ROLE_BOOK)];
-  const custom = getRuntimeCustomArchetype();
-  if (custom?.name && !names.some(roleName => keyNorm(roleName) === keyNorm(custom.name))) {
-    names.push(custom.name);
-  }
+  getRuntimeCustomArchetypes().forEach(custom => {
+    if (custom?.name && !names.some(roleName => keyNorm(roleName) === keyNorm(custom.name))) {
+      names.push(custom.name);
+    }
+  });
   return names;
 }
 
 function getRuntimeRoleSpec(roleName) {
   if (roleName && typeof roleName === "object" && roleName.weights) return roleName;
-  const custom = getRuntimeCustomArchetype();
+  const custom = getRuntimeCustomArchetype(roleName);
   if (typeof roleName === "string" && custom && keyNorm(roleName) === keyNorm(custom.name)) {
     return custom;
   }
@@ -1585,11 +1595,16 @@ function resolveStatKey(stat, pctIndex) {
   return stat;
 }
 
-function buildPercentileIndex(rows, statList) {
+function buildPercentileIndex(rows, statList, metricResolver = null) {
   const out = new Map();
   const list = statList || ALL_ROLE_STATS;
   for (const stat of list) {
-    const vals = rows.map(r => numCell(r, stat)).filter(Number.isFinite).sort((a,b)=>a-b);
+    const vals = rows.map(r => {
+      if (metricResolver) {
+        return numerify(metricResolver(r, stat));
+      }
+      return numCell(r, stat);
+    }).filter(Number.isFinite).sort((a,b)=>a-b);
     out.set(stat, vals);
     const mapped = mapHeaderName(stat);
     if (mapped && mapped !== stat) {
@@ -1962,7 +1977,7 @@ function useResizeObserver(ref) {
 /* ===================== Charts ===================== */
 
 /* ============== Pizza Chart Component (JavaScript SVG) =============== */
-const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customMetricColors = {} }) => {
+const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customMetricColors = {}, metricResolver = numCell, customMetricDecimalPlaces = 2, customMetricNames = [] }) => {
   const [chartData, setChartData] = useState(null);
   const [hoveredSegment, setHoveredSegment] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
@@ -1974,7 +1989,7 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
     // Prepare the data
     const stats = [];
     roleStats.forEach(stat => {
-      const raw = numCell(playerData, stat);
+      const raw = numerify(metricResolver(playerData, stat));
       const pct = percentileFor(pctIndex, stat, raw);
       stats.push({
         label: stat,
@@ -1990,7 +2005,12 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
       age: numCell(playerData, "Age") || null,
       stats
     });
-  }, [playerName, playerData, roleStats, compScope, pctIndex]);
+  }, [playerName, playerData, roleStats, compScope, pctIndex, metricResolver, customMetricDecimalPlaces, customMetricNames]);
+
+  const formatPizzaValue = (statName, value) => {
+    const isCustomMetric = customMetricNames.includes(statName);
+    return isCustomMetric ? tf(value, customMetricDecimalPlaces) : tf(value, 2);
+  };
 
   const createPizzaChart = () => {
     if (!chartData || !chartData.stats) return null;
@@ -2231,7 +2251,7 @@ const Pizza = ({ playerName, playerData, roleStats, compScope, pctIndex, customM
               {chartData.stats[hoveredSegment].label}
             </div>
             <div style={{ marginBottom: '2px' }}>
-              <strong>Raw Value:</strong> {chartData.stats[hoveredSegment].raw.toFixed(2)}
+              <strong>Raw Value:</strong> {formatPizzaValue(chartData.stats[hoveredSegment].label, chartData.stats[hoveredSegment].raw)}
             </div>
             <div style={{ marginBottom: '2px' }}>
               <strong>Percentile:</strong> {chartData.stats[hoveredSegment].value.toFixed(1)}%
@@ -3019,8 +3039,31 @@ export default function App(){
   const [transferMaxResults, setTransferMaxResults] = useStickyState("transfer:maxResults", 30);
   const [targetSpecificRole, setTargetSpecificRole] = useStickyState("transfer:targetRole", "");
 
-  /* ---------- Search (live) ---------- */
+  /* ---------- Search (submit-based) ---------- */
   const [searchQuery, setSearchQuery] = useStickyState("flt:q:query", "");
+  const [searchInput, setSearchInput] = useState("");
+  
+  useEffect(() => {
+    setSearchInput(searchQuery);
+  }, [searchQuery]);
+  
+  const applySearch = () => {
+    const q = normalizePlayerName((searchInput || "").trim().toLowerCase());
+    if (q) {
+      const matches = rows.filter(r => {
+        const name = normalizePlayerName(String(r["Name"] || "").toLowerCase());
+        return name.includes(q);
+      });
+      const uniqueNames = Array.from(new Set(matches.map(m => String(m["Name"] || "")))).filter(Boolean);
+      if (uniqueNames.length === 1) {
+        setPlayer(uniqueNames[0]);
+        setSearchInput("");
+        setSearchQuery("");
+        return;
+      }
+    }
+    setSearchQuery(searchInput);
+  };
 
   /* ---------- Selections ---------- */
   const [player, setPlayer] = useStickyState("sel:player", "");
@@ -3123,16 +3166,17 @@ export default function App(){
   
   // Custom archetype helpers
   const commitCaName = () => {
-    const val = (caNameInputRef.current?.value || "").trim();
+    const val = caName.trim();
     return val;
   };
   const startEditArchetype = (arch) => {
     setCaEditId(arch.id);
-    setCaName(arch.name);
+    setCaName(arch.name || "");
     setCaColor(arch.color || "#4f46e5");
     setCaBaseline(arch.baseline || ["M (C)"]);
     setCaWeights(arch.weights || {});
   };
+  
   const cancelCaEdit = () => {
     setCaEditId("");
     setCaName("");
@@ -3193,20 +3237,42 @@ export default function App(){
     reader.onload = (event) => {
       try {
         const data = JSON.parse(event.target?.result);
-        if (Array.isArray(data.archetypes)) {
-          const imported = data.archetypes.map(a => ({
-            ...a,
-            id: a.id || `ca-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-          }));
-          setArchetypes(prev => [...prev, ...imported]);
-          if (imported.length > 0) setSelectedArchetypeId(imported[0].id);
+        const sourceArchetypes = Array.isArray(data?.archetypes)
+          ? data.archetypes
+          : (data && typeof data === "object" && (data.name || data.baseline || data.weights) ? [data] : []);
+        if (!sourceArchetypes.length) {
+          alert('No archetypes found in that file');
+          return;
         }
+        const imported = sourceArchetypes.map(a => ({
+          id: a.id || `ca-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: strip(a.name) || "Custom Archetype",
+          color: a.color || "#4f46e5",
+          baseline: Array.isArray(a.baseline) ? a.baseline : [],
+          weights: (a.weights && typeof a.weights === "object") ? (() => {
+            const cleaned = {};
+            for (const [k, v] of Object.entries(a.weights)) {
+              const key = strip(k);
+              const n = Number(v);
+              cleaned[key] = Number.isFinite(n) ? n : v;
+            }
+            return cleaned;
+          })() : {}
+        }));
+        setArchetypes(prev => [...prev, ...imported]);
+        const first = imported[0];
+        setSelectedArchetypeId(first.id);
+        setCaEditId(first.id);
+        setCaName(first.name);
+        setCaColor(first.color || "#4f46e5");
+        setCaBaseline(first.baseline || []);
+        setCaWeights(first.weights || {});
       } catch (err) {
         alert('Invalid archetype file format');
       }
+      e.target.value = '';
     };
     reader.readAsText(file);
-    e.target.value = '';
   };
 
   const [archetypes, setArchetypes] = useStickyState("custom:archetypes", []);
@@ -3216,7 +3282,18 @@ export default function App(){
   const [caColor, setCaColor] = useState("#4f46e5");
   const [caBaseline, setCaBaseline] = useState(["M (C)"]);
   const [caWeights, setCaWeights] = useState({});
-  const caNameInputRef = useRef(null);
+
+  // When selected archetype changes, auto-load it into the editor
+  useEffect(() => {
+    if (!selectedArchetypeId) {
+      cancelCaEdit();
+      return;
+    }
+    const arch = archetypes.find(a => a.id === selectedArchetypeId);
+    if (arch) {
+      startEditArchetype(arch);
+    }
+  }, [selectedArchetypeId, archetypes]);
 
   const addStatFilter = useCallback(() => {
     const fallbackStat = metricBuilderOptions.includes("Goals")
@@ -3290,19 +3367,34 @@ export default function App(){
   const SCOPE_OPTIONS = ["Filtered Cohort","All Loaded","Role Baseline"];
   const [compScope, setCompScope] = useStickyState("comp:scope", "Filtered Cohort");
 
+    const [customMetricDecimalPlaces, setCustomMetricDecimalPlaces] = useStickyState("ui:customMetricDP", 2);
+
   /* ---------- Custom archetype ---------- */
   useEffect(() => {
-    const selected = archetypes.find(a => a.id === selectedArchetypeId);
-    RUNTIME_CUSTOM_ARCHETYPE = selected ? {
-      name: selected.name || "Custom Archetype",
-      baseline: Array.isArray(selected.baseline) ? selected.baseline : [],
-      weights: selected.weights && typeof selected.weights === "object" ? selected.weights : {}
-    } : {
-      name: "",
-      baseline: [],
-      weights: {}
-    };
-  }, [archetypes, selectedArchetypeId]);
+    RUNTIME_CUSTOM_ARCHETYPES = Array.isArray(archetypes)
+      ? archetypes.map(archetype => ({
+          id: archetype.id || `ca-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name: strip(archetype.name) || "Custom Archetype",
+          color: archetype.color || "#4f46e5",
+          baseline: Array.isArray(archetype.baseline) ? archetype.baseline : [],
+          weights: archetype.weights && typeof archetype.weights === "object" ? archetype.weights : {}
+        }))
+      : [];
+  }, [archetypes]);
+
+  // Derived sidebar positions: include any imported archetype whose name follows the POS14 naming convention
+  const sidebarPositions = useMemo(() => {
+    try {
+      const extras = (Array.isArray(archetypes) ? archetypes : [])
+        .map(a => String(a?.name || "").trim())
+        .filter(n => n && !POS14.includes(n))
+        .filter(n => {
+          // Match patterns like "M (C)", "D (L)", "ST (C)" etc.
+          return /^[A-Z]{1,3}(?: \([A-Z]{1,3}\))$/.test(n);
+        });
+      return Array.from(new Set([...POS14, ...extras]));
+    } catch (e) { return POS14; }
+  }, [archetypes]);
 
   // Always start each page load on the onboarding tutorial.
   useEffect(() => {
@@ -3781,7 +3873,7 @@ export default function App(){
   }, [metricBuilderOptions]);
 
   // Base percentile index uses the pre-stat-filter cohort so stat filters don't shift percentiles.
-  const pctIndex = useMemo(() => buildPercentileIndex(baseFilteredRows, percentileStats), [baseFilteredRows, percentileStats]);
+  const pctIndex = useMemo(() => buildPercentileIndex(baseFilteredRows, percentileStats, metricValue), [baseFilteredRows, percentileStats, metricValue]);
   const filteredRows = useMemo(() => {
     return evaluateStatFilterGroup(baseFilteredRows, activeStatFilters, {
       logic: statFilterLogic,
@@ -3825,7 +3917,7 @@ export default function App(){
       : Array.from(new Set(rows.flatMap(r => Object.keys(r || {}))));
     return cols.filter(col => rows.some(rr => Number.isFinite(numerify(getCell(rr, col)))));
   }, [rows, datasetColumns]);
-  const allLoadedPctIndex = useMemo(() => buildPercentileIndex(rows, percentileStats), [rows, percentileStats]);
+  const allLoadedPctIndex = useMemo(() => buildPercentileIndex(rows, percentileStats, metricValue), [rows, percentileStats, metricValue]);
   const filteredAvgRating = useMemo(
     () => averageNumericValue(filteredRows, ["Avg Rating", "Av Rat", "Rating"]),
     [filteredRows]
@@ -3840,8 +3932,8 @@ export default function App(){
     } catch { return rows; }
   }, [scopeRows, rows]);
 
-  const scopePctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, percentileStats), [displayScopeRows, percentileStats]);
-  const scopeAllLoadedPctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, percentileStats), [displayScopeRows, percentileStats]);
+  const scopePctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, percentileStats, metricValue), [displayScopeRows, percentileStats, metricValue]);
+  const scopeAllLoadedPctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, percentileStats, metricValue), [displayScopeRows, percentileStats, metricValue]);
 
   /* ---------- Players list & selection sanity ---------- */
   const players = useMemo(() => filteredRows.map(r => r["Name"]).filter(Boolean), [filteredRows]);
@@ -4014,7 +4106,8 @@ export default function App(){
     const currentProfileRole = roleOptions.includes(profileRole) ? profileRole : (roleOptions[0] || bestRole);
     const roleScoreMap = new Map(roleScores.map(x => [x.roleName, x.score]));
     const currentProfileRoleScore = roleScoreMap.get(currentProfileRole) ?? bestScore;
-    const statsProfileRole = getSimilarityStatsForRole(currentProfileRole);
+    const baseStats = getSimilarityStatsForRole(currentProfileRole);
+    const statsProfileRole = Array.from(new Set([...baseStats, ...customMetricNames]));
 
     const mins = numerify(r["Minutes"]);
     const age  = numerify(r["Age"]);
@@ -4098,6 +4191,8 @@ export default function App(){
       if (!Number.isFinite(n)) return text;
       const k = keyNorm(statName);
       if (k === "age" || k.includes("minutes") || k === "goals" || k === "assist" || k.includes("cards") || k.includes("appearances")) return tf(n, 0);
+      const isCustomMetric = customMetricNames.includes(statName);
+      if (isCustomMetric) return tf(n, customMetricDecimalPlaces);
       return tf(n, 2);
     };
 
@@ -4219,7 +4314,10 @@ export default function App(){
                       compScope={compScope}
                       pctIndex={pctIndex}
                       customMetricColors={customMetricColorMap}
-                    />
+                      metricResolver={metricValue}
+                        customMetricDecimalPlaces={customMetricDecimalPlaces}
+                        customMetricNames={customMetricNames}
+                      />
                   </div>
                 </div>
 
@@ -4559,6 +4657,33 @@ export default function App(){
       setCmSteps(prev => [...prev, { operation: "add", metric: pick || metricBuilderOptions[0] || "", inputType: "metric", groupPrevious: false, weight: 1 }]);
     };
 
+    const addPer90Shortcut = () => {
+      const minutesMetric = metricBuilderOptions.find(metric => keyNorm(metric) === keyNorm("Minutes"))
+        || metricBuilderOptions.find(metric => /minutes|minute|mins|min/i.test(metric))
+        || "Minutes";
+
+      setCmSteps(prev => {
+        const base = Array.isArray(prev) ? [...prev] : [];
+        return [
+          ...base,
+          {
+            operation: "divide",
+            metric: minutesMetric,
+            inputType: "metric",
+            groupPrevious: true,
+            weight: 1
+          },
+          {
+            operation: "multiply",
+            metric: "90",
+            inputType: "value",
+            groupPrevious: false,
+            weight: 1
+          }
+        ];
+      });
+    };
+
     const updateMetricStep = (idx, patch) => {
       setCmSteps(prev => {
         const base = Array.isArray(prev) ? [...prev] : [];
@@ -4648,10 +4773,14 @@ export default function App(){
             <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
               Use <em>Less is better</em> when smaller values should score higher after ranking.
             </div>
+            <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
+              Use <em>Per 90</em> to append <code>/ Minutes * 90</code> to the current formula.
+            </div>
             <div style={{display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10}}>
               <button className={`segBtn ${cmEvaluationMode === "ltr" ? "active" : ""}`} type="button" onClick={() => setCmEvaluationMode("ltr")}>Left to right</button>
               <button className={`segBtn ${cmEvaluationMode === "bidmas" ? "active" : ""}`} type="button" onClick={() => setCmEvaluationMode("bidmas")}>BIDMAS</button>
               <button className={`segBtn ${cmShowWeights ? "active" : ""}`} type="button" onClick={() => setCmShowWeights(prev => !prev)}>Show weights</button>
+              <button className="segBtn" type="button" onClick={addPer90Shortcut}>Per 90</button>
               <div className="status">Preview: {formatCustomMetricPreview({ baseMetric: cmBaseMetric, steps: cmSteps, evaluationMode: cmEvaluationMode }, { showMetricNames: true })}</div>
             </div>
             <div style={{display:"flex", flexDirection:"column", gap:8}}>
@@ -4893,8 +5022,8 @@ export default function App(){
     };
 
     // Check if archetype uses any custom metrics that aren't imported
-    const usedCustomMetrics = Object.keys(caWeights).filter(s => customMetricNames.includes(s));
-    const missingMetrics = usedCustomMetrics.filter(m => !customMetrics.some(cm => cm.name === m));
+    const usedCustomMetrics = Object.keys(caWeights).filter(s => customMetricNames.some(name => keyNorm(name) === keyNorm(s)));
+    const missingMetrics = usedCustomMetrics.filter(m => !customMetrics.some(cm => keyNorm(cm.name) === keyNorm(m)));
 
     return (
       <>
@@ -4917,7 +5046,7 @@ export default function App(){
             {archetypes.length > 0 && (
               <div className="row" style={{gap:8, alignItems:"end", flexWrap:"wrap"}}>
                 <div className="col" style={{minWidth:220}}>
-                  <label className="lbl">Active archetype</label>
+                  <label className="lbl">Edit archetype</label>
                   <select className="input" value={selectedArchetypeId} onChange={e=>setSelectedArchetypeId(e.target.value)}>
                     <option value="">-- None --</option>
                     {archetypes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -4933,15 +5062,12 @@ export default function App(){
                   className="input"
                   type="text"
                   autoComplete="off"
-                  ref={caNameInputRef}
-                  defaultValue={caName}
-                  key={caEditId || "ca-new"}
-                  onBlur={() => setCaName(commitCaName())}
+                  value={caName}
+                  onChange={e => setCaName(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      setCaName(commitCaName());
-                      e.currentTarget.blur();
+                      addArchetype();
                     }
                   }}
                   placeholder="e.g. Creative Midfielder"
@@ -4968,6 +5094,9 @@ export default function App(){
               </div>
               <div style={{fontSize:12, color:"var(--muted)", marginBottom:10}}>
                 <strong style={{color:"var(--text)"}}>Custom Metrics:</strong> If this archetype uses custom metrics, make sure you have imported them on the <em>Custom Metrics</em> screen first.
+              </div>
+              <div style={{fontSize:12, color:"var(--muted)"}}>
+                Imported archetypes are available in sidebar role pickers, Player Profile, Role Matrix, and the other role-based views automatically.
               </div>
             </div>
 
@@ -6146,7 +6275,7 @@ export default function App(){
       return Array.from(new Set(clubs)).sort((a, b) => String(a).localeCompare(String(b)));
     }, [filteredRows]);
 
-    const dbPctIndex = useMemo(() => buildPercentileIndex(filteredRows, percentileStats), [filteredRows, percentileStats]);
+    const dbPctIndex = useMemo(() => buildPercentileIndex(filteredRows, percentileStats, metricValue), [filteredRows, percentileStats, metricValue]);
 
     useEffect(() => {
       if (!dbStatOptions.length) return;
@@ -6636,7 +6765,7 @@ export default function App(){
           <div className="sectionBody">
             <label className="lbl">Positions (14 treated individually)</label>
             <div className="chipRow">
-              {POS14.map(p => (
+              {sidebarPositions.map(p => (
                 <button key={p} className={`chip ${posCohort.includes(p)?"active":""}`}
                   onClick={()=> setPosCohort(posCohort.includes(p) ? posCohort.filter(x=>x!==p) : [...posCohort, p]) }>
                   {p}
@@ -6717,19 +6846,27 @@ export default function App(){
               {uniqueClubs.map(club => <option key={club} value={club}>{club}</option>)}
             </select>
 
-            <label className="lbl">Search (name / club / pos) - live</label>
+            <label className="lbl">Search (name / club / pos)</label>
             <div className="row">
               <input
                 className="input"
                 placeholder="Type name, club or pos…"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === "Escape") setSearchQuery("");
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applySearch();
+                  }
+                  if (e.key === "Escape") {
+                    setSearchInput("");
+                    setSearchQuery("");
+                  }
                 }}
                 autoComplete="off"
               />
-              <button className="btn ghost tight" onClick={clearSearch}>Clear</button>
+              <button className="btn ghost tight" onClick={applySearch}>Search</button>
+              <button className="btn ghost tight" onClick={() => { setSearchInput(""); setSearchQuery(""); }}>Clear</button>
             </div>
 
             <div className="row">
@@ -6770,6 +6907,27 @@ export default function App(){
                   <option value="percentile">Percentiles</option>
                 </select>
               </div>
+              </div>
+
+              <label className="lbl" style={{marginTop: "8px"}}>Custom Metrics Decimal Places</label>
+              <div className="row" style={{gap: 8}}>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  max="6"
+                  value={customMetricDecimalPlaces}
+                  onChange={e => {
+                    const n = Number(e.target.value);
+                    if (Number.isFinite(n) && n >= 0 && n <= 6) {
+                      setCustomMetricDecimalPlaces(n);
+                    }
+                  }}
+                  style={{maxWidth: "80px"}}
+                />
+                <span style={{fontSize: "12px", color: "var(--muted)", lineHeight: "32px"}}>
+                  {customMetricDecimalPlaces === 0 ? "integers only" : `${customMetricDecimalPlaces}dp`}
+                </span>
             </div>
             <div className="statFilterList">
               {(Array.isArray(statFilters) ? statFilters : []).map((f, idx) => (
