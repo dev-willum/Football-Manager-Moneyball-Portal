@@ -4106,8 +4106,7 @@ export default function App(){
     const currentProfileRole = roleOptions.includes(profileRole) ? profileRole : (roleOptions[0] || bestRole);
     const roleScoreMap = new Map(roleScores.map(x => [x.roleName, x.score]));
     const currentProfileRoleScore = roleScoreMap.get(currentProfileRole) ?? bestScore;
-    const baseStats = getSimilarityStatsForRole(currentProfileRole);
-    const statsProfileRole = Array.from(new Set([...baseStats, ...customMetricNames]));
+    const statsProfileRole = getSimilarityStatsForRole(currentProfileRole);
 
     const mins = numerify(r["Minutes"]);
     const age  = numerify(r["Age"]);
