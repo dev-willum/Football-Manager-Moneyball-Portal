@@ -1,7 +1,8 @@
 // src/App.jsx - FULL FILE - PART 1/2 (PATCH)
-import React, { useEffect, useCallback,useMemo, useRef, useState } from "react";
+import React, { useDeferredValue, useEffect, useCallback,useMemo, useRef, useState, useTransition } from "react";
 import * as d3 from "d3";
 import Papa from "papaparse";
+import { saveDataset, loadDataset, clearDataset, queryDataset, getMetricCache, setMetricCache } from "./dataGateway";
 
 /* ===================== Error Boundary ===================== */
 class ErrorBoundary extends React.Component {
@@ -636,6 +637,44 @@ const numericStep = (value, fallback = 1) => {
 };
 
 const makeFilterId = () => `flt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+const hashString = (input) => {
+  const str = String(input ?? "");
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const serializePctIndex = (pctIndex) => Array.from((pctIndex instanceof Map ? pctIndex : new Map()).entries());
+const deserializePctIndex = (value) => {
+  if (!Array.isArray(value)) return null;
+  const map = new Map();
+  for (const entry of value) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    map.set(entry[0], entry[1]);
+  }
+  return map;
+};
+
+const serializeRolePctByRole = (rolePctByRole) => {
+  const out = {};
+  if (!rolePctByRole || typeof rolePctByRole !== "object") return out;
+  for (const [role, pctIndex] of Object.entries(rolePctByRole)) {
+    out[role] = serializePctIndex(pctIndex);
+  }
+  return out;
+};
+
+const deserializeRolePctByRole = (value) => {
+  const out = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [role, pctIndex] of Object.entries(value)) {
+    out[role] = deserializePctIndex(pctIndex) || new Map();
+  }
+  return out;
+};
 
 const parseHeightToInches = (v) => {
   if (v === null || v === undefined) return NaN;
@@ -1390,7 +1429,7 @@ const ROLE_BOOK = {
     weights: {
       "Expected Goals Prevented/90": 1.7,
       "Saves Held": 1.2, "Saves Parried": 0.8, "Saves Tipped": 0.6,
-      "Conceded/90": 1.2, "Clean Sheets/90": 0.9
+      "Conceded/90": 1.2, "Clean Sheets": 0.9
     }
   },
   "GK - Sweeper Keeper": {
@@ -1715,7 +1754,7 @@ function getSimilarityScopeRole(scope, bestRole, sidebarRole, overallRole = "Ove
 }
 
 function getSimilarityStatsForRole(roleName) {
-  const custom = getRuntimeCustomArchetype();
+  const custom = getRuntimeCustomArchetype(roleName);
   const stats = (custom && keyNorm(roleName) === keyNorm(custom.name))
     ? Object.keys(custom.weights || {})
     : (ROLE_STATS[roleName] || []);
@@ -2584,6 +2623,82 @@ function useStickyState(key, initial) {
   return [v, setV];
 }
 
+const DATASET_DB_NAME = "fm-analytics-js-local-dataset";
+const DATASET_DB_VERSION = 1;
+const DATASET_STORE_NAME = "datasets";
+const DATASET_CACHE_KEY = "current";
+
+function openDatasetDb() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB is not available"));
+      return;
+    }
+    const request = indexedDB.open(DATASET_DB_NAME, DATASET_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DATASET_STORE_NAME)) {
+        db.createObjectStore(DATASET_STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Failed to open dataset cache"));
+  });
+}
+
+async function writeDatasetCache(payload) {
+  const db = await openDatasetDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DATASET_STORE_NAME, "readwrite");
+      tx.objectStore(DATASET_STORE_NAME).put({ key: DATASET_CACHE_KEY, ...payload });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error("Failed to write dataset cache"));
+      tx.onabort = () => reject(tx.error || new Error("Dataset cache write aborted"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function readDatasetCache() {
+  const db = await openDatasetDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(DATASET_STORE_NAME, "readonly");
+      const req = tx.objectStore(DATASET_STORE_NAME).get(DATASET_CACHE_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error || new Error("Failed to read dataset cache"));
+      tx.onabort = () => reject(tx.error || new Error("Dataset cache read aborted"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function clearDatasetCache() {
+  const db = await openDatasetDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DATASET_STORE_NAME, "readwrite");
+      tx.objectStore(DATASET_STORE_NAME).delete(DATASET_CACHE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error("Failed to clear dataset cache"));
+      tx.onabort = () => reject(tx.error || new Error("Dataset cache clear aborted"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function requestPersistentStorage() {
+  try {
+    if (typeof navigator?.storage?.persist === "function") {
+      await navigator.storage.persist();
+    }
+  } catch {}
+}
+
 /* ===================== APP ===================== */
 /* ===================== Club Context Analysis ===================== */
 function analyzeClubContext(managedClub, rows, pctIndex, rolePctByRole = null) {
@@ -3009,6 +3124,8 @@ export default function App(){
   const [rows, setRows] = useState([]);
   const [datasetColumns, setDatasetColumns] = useState([]);
   const [status, setStatus] = useState("Load a CSV or HTML table exported from your data source.");
+  const [datasetSavedAt, setDatasetSavedAt] = useState(null);
+  const [backendReady, setBackendReady] = useState(false);
 
   /* ---------- Filters ---------- */
   const [posCohort, setPosCohort] = useStickyState("flt:posCohort", POS14);
@@ -3019,8 +3136,9 @@ export default function App(){
   const [statFilters, setStatFilters] = useStickyState("flt:statFilters", []);
   const [statFilterLogic, setStatFilterLogic] = useStickyState("flt:statFilterLogic", "AND");
   const [statFilterMode, setStatFilterMode] = useStickyState("flt:statFilterMode", "raw");
+  const [, startUiUpdateTransition] = useTransition();
 
-  /* ---------- Current Game Date ---------- */
+  /* ---------- Game Date & Club ---------- */
   const [gameMonth, setGameMonth] = useStickyState("game:month", 7); // July start of season
   const [gameYear, setGameYear] = useStickyState("game:year", 2024);
 
@@ -3065,6 +3183,8 @@ export default function App(){
     setSearchQuery(searchInput);
   };
 
+
+
   /* ---------- Selections ---------- */
   const [player, setPlayer] = useStickyState("sel:player", "");
   const [role, setRole] = useStickyState("sel:role", getRuntimeRoleNames()[0] || Object.keys(ROLE_STATS)[0] || "");
@@ -3086,12 +3206,14 @@ export default function App(){
     return out;
   }, [customMetrics]);
   const setCustomMetrics = useCallback((updater) => {
-    setCustomMetricsStore(prev => {
-      const base = normalizeCustomMetrics(prev);
-      const next = typeof updater === "function" ? updater(base) : updater;
-      return normalizeCustomMetrics(next);
+    startUiUpdateTransition(() => {
+      setCustomMetricsStore(prev => {
+        const base = normalizeCustomMetrics(prev);
+        const next = typeof updater === "function" ? updater(base) : updater;
+        return normalizeCustomMetrics(next);
+      });
     });
-  }, [setCustomMetricsStore]);
+  }, [setCustomMetricsStore, startUiUpdateTransition]);
 
   const dbNumericStats = useMemo(() => {
     if (!rows.length) return [];
@@ -3191,30 +3313,37 @@ export default function App(){
       return;
     }
     if (caEditId) {
-      setArchetypes(prev => prev.map(a => a.id === caEditId ? {
+      startUiUpdateTransition(() => setArchetypes(prev => prev.map(a => a.id === caEditId ? {
         id: a.id,
         name,
         color: caColor,
         baseline: caBaseline,
         weights: caWeights,
         exported: a.exported
-      } : a));
+      } : a)));
       cancelCaEdit();
     } else {
       const newId = `ca-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      setArchetypes(prev => [...prev, {
+      const savedWeights = caWeights;
+      const savedBaseline = caBaseline;
+      const savedColor = caColor;
+      startUiUpdateTransition(() => setArchetypes(prev => [...prev, {
         id: newId,
         name,
-        color: caColor,
-        baseline: caBaseline,
-        weights: caWeights
-      }]);
+        color: savedColor,
+        baseline: savedBaseline,
+        weights: savedWeights
+      }]));
+      // For new archetypes, set selectedArchetypeId which will trigger useEffect to load it
+      // but also preserve the current weights/baseline/color so they display immediately
       setSelectedArchetypeId(newId);
-      cancelCaEdit();
+      setCaEditId("");
+      setCaName("");
+      // Don't clear caWeights, caBaseline, caColor - keep them so the newly selected archetype displays them
     }
   };
   const removeArchetype = (id) => {
-    setArchetypes(prev => prev.filter(a => a.id !== id));
+    startUiUpdateTransition(() => setArchetypes(prev => prev.filter(a => a.id !== id)));
     if (selectedArchetypeId === id) {
       const remaining = archetypes.filter(a => a.id !== id);
       setSelectedArchetypeId(remaining.length > 0 ? remaining[0].id : "");
@@ -3259,7 +3388,7 @@ export default function App(){
             return cleaned;
           })() : {}
         }));
-        setArchetypes(prev => [...prev, ...imported]);
+        startUiUpdateTransition(() => setArchetypes(prev => [...prev, ...imported]));
         const first = imported[0];
         setSelectedArchetypeId(first.id);
         setCaEditId(first.id);
@@ -3351,16 +3480,28 @@ export default function App(){
   }, [statFilters, setStatFilters]);
 
   const clearAppCache = useCallback(() => {
-    const confirmed = window.confirm("Clear saved app settings and selections, then reload?");
+    const confirmed = window.confirm("Clear saved app settings and local uploads, then reload?");
     if (!confirmed) return;
     const prefixes = ["ui:", "flt:", "game:", "manager:", "transfer:", "sel:", "scatter:", "value:", "comp:", "custom:", "pf:"];
-    try {
-      for (const key of Object.keys(localStorage)) {
-        if (prefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);
+    (async () => {
+      try {
+        for (const key of Object.keys(localStorage)) {
+          if (prefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);
+        }
+      } catch {}
+      try {
+        await clearDataset();
+      } catch (err) {
+        console.error(err);
+        try {
+          await clearDatasetCache();
+        } catch (fallbackErr) {
+          console.error(fallbackErr);
+        }
       }
-    } catch {}
-    setStatus("Cache cleared. Reloading...");
-    window.location.reload();
+      setStatus("Cache cleared. Reloading...");
+      window.location.reload();
+    })();
   }, [setStatus]);
 
   /* ---------- Computation scope ---------- */
@@ -3396,10 +3537,50 @@ export default function App(){
     } catch (e) { return POS14; }
   }, [archetypes]);
 
-  // Always start each page load on the onboarding tutorial.
   useEffect(() => {
-    setMode("Tutorial");
-  }, []);
+    let cancelled = false;
+    (async () => {
+      try {
+        let cached = null;
+        let backendLoaded = false;
+        try {
+          cached = await loadDataset();
+          backendLoaded = Boolean(cached?.rows?.length);
+        } catch (err) {
+          console.warn("Tauri dataset load failed, falling back to browser cache.", err);
+        }
+
+        if (!cached) {
+          await requestPersistentStorage();
+          cached = await readDatasetCache();
+        }
+
+        if (cancelled) return;
+        if (cached?.rows?.length) {
+          const restoredRows = Array.isArray(cached.rows) ? cached.rows : [];
+          const restoredColumns = Array.isArray(cached.columns)
+            ? cached.columns
+            : Array.from(new Set(restoredRows.flatMap(row => Object.keys(row || {}))));
+          setDatasetColumns(restoredColumns);
+          setRows(restoredRows);
+          setDatasetSavedAt(Number.isFinite(cached.saved_at) ? cached.saved_at : null);
+          setBackendReady(backendLoaded);
+          setStatus(`Loaded cached local dataset (${restoredRows.length} rows, ${restoredColumns.length} columns).`);
+          setMode("Role Leaders");
+        } else {
+          setBackendReady(false);
+          setMode("Tutorial");
+        }
+      } catch (err) {
+        console.error(err);
+        setBackendReady(false);
+        if (!cancelled) setMode("Tutorial");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setDatasetColumns, setMode, setRows, setStatus]);
 
   const openUploadChooser = useCallback(() => {
     setSidebarCollapsed(false);
@@ -3561,6 +3742,35 @@ export default function App(){
       const finalColumns = Array.from(mergedColumns);
       setDatasetColumns(finalColumns);
       setRows(mergedRows);
+      const savedAt = Date.now();
+      const rowIndex = mergedRows.map(r => {
+        const age = numerify(r["Age"]);
+        const minutes = numerify(r["Minutes"]);
+        const heightIn = parseHeightToInches(getCell(r, "Height"));
+        return {
+          name: strip(r["Name"] || ""),
+          club: strip(r["Club"] || ""),
+          pos: strip(r["Pos"] || ""),
+          age: Number.isFinite(age) ? age : null,
+          minutes: Number.isFinite(minutes) ? minutes : null,
+          height_in: Number.isFinite(heightIn) ? heightIn : null,
+        };
+      });
+      const payload = { rows: mergedRows, columns: finalColumns, saved_at: savedAt, row_index: rowIndex };
+      setDatasetSavedAt(savedAt);
+      setBackendReady(false);
+      setStatus("Saving dataset locally...");
+      try {
+        await saveDataset(payload);
+        setBackendReady(true);
+      } catch (err) {
+        console.error(err);
+        try {
+          await writeDatasetCache(payload);
+        } catch (fallbackErr) {
+          console.error(fallbackErr);
+        }
+      }
 
       const warningBits = [];
       if (unsupportedFiles.length) warningBits.push(`Skipped ${unsupportedFiles.length} unsupported file${unsupportedFiles.length === 1 ? "" : "s"}`);
@@ -3822,33 +4032,131 @@ export default function App(){
       .filter(f => f.stat && f.value !== "" && Number.isFinite(Number(f.value)));
   }, [statFilters]);
 
+  // Pre-cache numerified ages and minutes to avoid repeated parsing in filter
+  const rowAgeCache = useMemo(() => {
+    const cache = new Map();
+    rows.forEach((r, i) => {
+      cache.set(i, numerify(r["Age"]));
+    });
+    return cache;
+  }, [rows]);
+
+  const rowMinutesCache = useMemo(() => {
+    const cache = new Map();
+    rows.forEach((r, i) => {
+      cache.set(i, numerify(r["Minutes"]));
+    });
+    return cache;
+  }, [rows]);
+
+  const [baseFilteredRows, setBaseFilteredRows] = useState([]);
+  const [baseFilterPending, setBaseFilterPending] = useState(false);
+
   // Percentile baseline cohort intentionally ignores stat filters so percentiles stay stable.
-  const baseFilteredRows = useMemo(() => {
+  const computeBaseFilteredRows = useCallback(() => {
     const cohort = new Set(posCohort.map(normToken));
     const minHeightIn = parseHeightToInches(minHeight);
     const maxHeightIn = parseHeightToInches(maxHeight);
-    return rows.filter(r => {
-      const mins = numerify(r["Minutes"]);
-      const age = numerify(r["Age"]);
-      const heightIn = parseHeightToInches(getCell(r, "Height"));
-      const tokens = expandFMPositions(r["Pos"]);
-      const hasPos = tokens.some(t => cohort.has(normToken(t)));
-      const minutesOk = !Number.isFinite(minMinutes) ? true : (Number.isFinite(mins) ? mins >= minMinutes : false);
-      const ageOk = !Number.isFinite(maxAge) ? true : (!Number.isFinite(age) ? true : age <= maxAge);
-      const minHeightOk = !Number.isFinite(minHeightIn) ? true : (Number.isFinite(heightIn) ? heightIn >= minHeightIn : false);
-      const maxHeightOk = !Number.isFinite(maxHeightIn) ? true : (Number.isFinite(heightIn) ? heightIn <= maxHeightIn : false);
-      const heightOk = minHeightOk && maxHeightOk;
-      
-      // Normalize search query and fields for better matching
-      const q = normalizePlayerName((searchQuery || "").trim().toLowerCase());
-      const name = normalizePlayerName(String(r["Name"]||"").toLowerCase());
-      const club = normalizePlayerName(String(r["Club"]||"").toLowerCase());
-      const pos = String(r["Pos"]||"").toLowerCase();
-      const qOk = !q || name.includes(q) || club.includes(q) || pos.includes(q);
+    const q = normalizePlayerName((searchQuery || "").trim().toLowerCase());
+    const hasMinMinutes = Number.isFinite(minMinutes);
+    const hasMaxAge = Number.isFinite(maxAge);
+    const hasHeightFilter = Number.isFinite(minHeightIn) || Number.isFinite(maxHeightIn);
+    const hasSearchQuery = q.length > 0;
 
-      return hasPos && minutesOk && ageOk && heightOk && qOk;
+    return rows.filter((r, idx) => {
+      // Check position first (cheap, often eliminates rows)
+      const tokens = expandFMPositions(r["Pos"]);
+      if (!tokens.some(t => cohort.has(normToken(t)))) return false;
+
+      // Check numeric filters (cheapest) using cached values
+      if (hasMinMinutes) {
+        const mins = rowMinutesCache.get(idx);
+        if (!Number.isFinite(mins) || mins < minMinutes) return false;
+      }
+      if (hasMaxAge) {
+        const age = rowAgeCache.get(idx);
+        if (!Number.isFinite(age) || age > maxAge) return false;
+      }
+
+      // Check height if needed (moderate cost)
+      if (hasHeightFilter) {
+        const heightIn = parseHeightToInches(getCell(r, "Height"));
+        if (Number.isFinite(minHeightIn) && (!Number.isFinite(heightIn) || heightIn < minHeightIn)) return false;
+        if (Number.isFinite(maxHeightIn) && (!Number.isFinite(heightIn) || heightIn > maxHeightIn)) return false;
+      }
+
+      // Check search last (most expensive)
+      if (hasSearchQuery) {
+        const name = normalizePlayerName(String(r["Name"]||"").toLowerCase());
+        const club = normalizePlayerName(String(r["Club"]||"").toLowerCase());
+        const pos = String(r["Pos"]||"").toLowerCase();
+        if (!name.includes(q) && !club.includes(q) && !pos.includes(q)) return false;
+      }
+
+      return true;
     });
-  }, [rows, posCohort, minMinutes, maxAge, minHeight, maxHeight, searchQuery]);
+  }, [rows, posCohort, minMinutes, maxAge, minHeight, maxHeight, searchQuery, rowAgeCache, rowMinutesCache]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const minHeightIn = parseHeightToInches(minHeight);
+    const maxHeightIn = parseHeightToInches(maxHeight);
+    const q = normalizePlayerName((searchQuery || "").trim().toLowerCase());
+    const query = {
+      pos: Array.isArray(posCohort) ? posCohort : [],
+      min_minutes: Number.isFinite(minMinutes) ? minMinutes : null,
+      max_age: Number.isFinite(maxAge) ? maxAge : null,
+      min_height_in: null,
+      max_height_in: null,
+      search: q.length ? q : null,
+    };
+
+    (async () => {
+      if (!rows.length) {
+        if (!cancelled) setBaseFilteredRows([]);
+        if (!cancelled) setBaseFilterPending(false);
+        return;
+      }
+      if (!backendReady) {
+        if (!cancelled) setBaseFilteredRows(computeBaseFilteredRows());
+        if (!cancelled) setBaseFilterPending(false);
+        return;
+      }
+      setBaseFilterPending(true);
+      try {
+        const result = await queryDataset(query);
+        if (!cancelled && Array.isArray(result)) {
+          const hasHeightFilter = Number.isFinite(minHeightIn) || Number.isFinite(maxHeightIn);
+          const filtered = hasHeightFilter
+            ? result.filter(r => {
+                const heightIn = parseHeightToInches(getCell(r, "Height"));
+                if (Number.isFinite(minHeightIn) && (!Number.isFinite(heightIn) || heightIn < minHeightIn)) return false;
+                if (Number.isFinite(maxHeightIn) && (!Number.isFinite(heightIn) || heightIn > maxHeightIn)) return false;
+                return true;
+              })
+            : result;
+          if (!filtered.length && rows.length) {
+            const fallback = computeBaseFilteredRows();
+            setBaseFilteredRows(fallback);
+          } else {
+            setBaseFilteredRows(filtered);
+          }
+          setBaseFilterPending(false);
+          return;
+        }
+      } catch (err) {
+        console.warn("Backend filter failed, using in-app filter.", err);
+      }
+      if (!cancelled) {
+        setBaseFilteredRows(computeBaseFilteredRows());
+      }
+      if (!cancelled) setBaseFilterPending(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rows, posCohort, minMinutes, maxAge, minHeight, maxHeight, searchQuery, computeBaseFilteredRows, backendReady]);
 
   const quickStatPresets = useMemo(() => {
     const pickMetric = (...candidates) => candidates.find(c => metricBuilderOptions.includes(c)) || "";
@@ -3872,20 +4180,91 @@ export default function App(){
     return out;
   }, [metricBuilderOptions]);
 
+  const deferredBaseFilteredRows = useDeferredValue(baseFilteredRows);
+  const deferredPercentileStats = useDeferredValue(percentileStats);
+
   // Base percentile index uses the pre-stat-filter cohort so stat filters don't shift percentiles.
-  const pctIndex = useMemo(() => buildPercentileIndex(baseFilteredRows, percentileStats, metricValue), [baseFilteredRows, percentileStats, metricValue]);
+  const pctIndex = useMemo(() => buildPercentileIndex(deferredBaseFilteredRows, deferredPercentileStats, metricValue), [deferredBaseFilteredRows, deferredPercentileStats, metricValue]);
   const filteredRows = useMemo(() => {
-    return evaluateStatFilterGroup(baseFilteredRows, activeStatFilters, {
+    return evaluateStatFilterGroup(deferredBaseFilteredRows, activeStatFilters, {
       logic: statFilterLogic,
       valueMode: statFilterMode,
       percentileIndex: pctIndex,
       metricResolver: (row, statName) => metricValue(row, statName)
     });
-  }, [baseFilteredRows, activeStatFilters, statFilterLogic, statFilterMode, pctIndex, metricValue]);
-  const allLoadedRolePctIndex = useMemo(() => buildPercentileIndex(rows, allStats), [rows, allStats]);
-  const filteredRolePctIndex = useMemo(() => buildPercentileIndex(filteredRows, allStats), [filteredRows, allStats]);
-  const rolePctByRoleAllLoaded = useMemo(() => buildRolePercentileByRole(rows, rows), [rows]);
-  const rolePctByRoleFiltered = useMemo(() => buildRolePercentileByRole(filteredRows, rows), [filteredRows, rows]);
+  }, [deferredBaseFilteredRows, activeStatFilters, statFilterLogic, statFilterMode, pctIndex, metricValue]);
+  const deferredFilteredRows = useDeferredValue(filteredRows);
+
+  const datasetCacheKey = datasetSavedAt ? String(datasetSavedAt) : "none";
+  const allStatsKey = hashString(JSON.stringify(allStats));
+  const percentileStatsKey = hashString(JSON.stringify(percentileStats));
+  const customMetricsKey = hashString(JSON.stringify(customMetricsStore || []));
+  const allLoadedRolePctKey = `rolePctIndex:${datasetCacheKey}:${allStatsKey}:${customMetricsKey}`;
+  const rolePctByRoleKey = `rolePctByRole:${datasetCacheKey}:${allStatsKey}:${customMetricsKey}`;
+  const allLoadedPctKey = `allPctIndex:${datasetCacheKey}:${percentileStatsKey}:${customMetricsKey}`;
+
+  const [cachedAllLoadedRolePctIndex, setCachedAllLoadedRolePctIndex] = useState(null);
+  const [cachedRolePctByRoleAllLoaded, setCachedRolePctByRoleAllLoaded] = useState(null);
+  const [cachedAllLoadedPctIndex, setCachedAllLoadedPctIndex] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!backendReady || !datasetSavedAt || !rows.length) return;
+    (async () => {
+      try {
+        const cached = await getMetricCache(allLoadedRolePctKey);
+        if (!cancelled && cached) {
+          setCachedAllLoadedRolePctIndex(deserializePctIndex(cached));
+        }
+      } catch (err) {
+        console.warn("Metric cache load failed (role pct).", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [datasetSavedAt, rows.length, allLoadedRolePctKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!backendReady || !datasetSavedAt || !rows.length) return;
+    (async () => {
+      try {
+        const cached = await getMetricCache(rolePctByRoleKey);
+        if (!cancelled && cached) {
+          setCachedRolePctByRoleAllLoaded(deserializeRolePctByRole(cached));
+        }
+      } catch (err) {
+        console.warn("Metric cache load failed (role by role).", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [datasetSavedAt, rows.length, rolePctByRoleKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!backendReady || !datasetSavedAt || !rows.length) return;
+    (async () => {
+      try {
+        const cached = await getMetricCache(allLoadedPctKey);
+        if (!cancelled && cached) {
+          setCachedAllLoadedPctIndex(deserializePctIndex(cached));
+        }
+      } catch (err) {
+        console.warn("Metric cache load failed (all pct).", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [datasetSavedAt, rows.length, allLoadedPctKey]);
+
+  const allLoadedRolePctIndex = useMemo(() => {
+    if (cachedAllLoadedRolePctIndex) return cachedAllLoadedRolePctIndex;
+    return buildPercentileIndex(rows, allStats);
+  }, [cachedAllLoadedRolePctIndex, rows, allStats]);
+  const filteredRolePctIndex = useMemo(() => buildPercentileIndex(deferredFilteredRows, allStats), [deferredFilteredRows, allStats]);
+  const rolePctByRoleAllLoaded = useMemo(() => {
+    if (cachedRolePctByRoleAllLoaded) return cachedRolePctByRoleAllLoaded;
+    return buildRolePercentileByRole(rows, rows);
+  }, [cachedRolePctByRoleAllLoaded, rows]);
+  const rolePctByRoleFiltered = useMemo(() => buildRolePercentileByRole(deferredFilteredRows, rows), [deferredFilteredRows, rows]);
 
   /* ---------- Percentile scope rows ---------- */
   const scopeRows = useMemo(() => {
@@ -3917,7 +4296,28 @@ export default function App(){
       : Array.from(new Set(rows.flatMap(r => Object.keys(r || {}))));
     return cols.filter(col => rows.some(rr => Number.isFinite(numerify(getCell(rr, col)))));
   }, [rows, datasetColumns]);
-  const allLoadedPctIndex = useMemo(() => buildPercentileIndex(rows, percentileStats, metricValue), [rows, percentileStats, metricValue]);
+  const allLoadedPctIndex = useMemo(() => {
+    if (cachedAllLoadedPctIndex) return cachedAllLoadedPctIndex;
+    return buildPercentileIndex(rows, percentileStats, metricValue);
+  }, [cachedAllLoadedPctIndex, rows, percentileStats, metricValue]);
+
+  useEffect(() => {
+    if (!backendReady || !datasetSavedAt || !rows.length || cachedAllLoadedRolePctIndex) return;
+    const payload = serializePctIndex(allLoadedRolePctIndex);
+    setMetricCache(allLoadedRolePctKey, payload).catch(err => console.warn("Metric cache save failed (role pct).", err));
+  }, [datasetSavedAt, rows.length, cachedAllLoadedRolePctIndex, allLoadedRolePctIndex, allLoadedRolePctKey]);
+
+  useEffect(() => {
+    if (!backendReady || !datasetSavedAt || !rows.length || cachedRolePctByRoleAllLoaded) return;
+    const payload = serializeRolePctByRole(rolePctByRoleAllLoaded);
+    setMetricCache(rolePctByRoleKey, payload).catch(err => console.warn("Metric cache save failed (role by role).", err));
+  }, [datasetSavedAt, rows.length, cachedRolePctByRoleAllLoaded, rolePctByRoleAllLoaded, rolePctByRoleKey]);
+
+  useEffect(() => {
+    if (!backendReady || !datasetSavedAt || !rows.length || cachedAllLoadedPctIndex) return;
+    const payload = serializePctIndex(allLoadedPctIndex);
+    setMetricCache(allLoadedPctKey, payload).catch(err => console.warn("Metric cache save failed (all pct).", err));
+  }, [datasetSavedAt, rows.length, cachedAllLoadedPctIndex, allLoadedPctIndex, allLoadedPctKey]);
   const filteredAvgRating = useMemo(
     () => averageNumericValue(filteredRows, ["Avg Rating", "Av Rat", "Rating"]),
     [filteredRows]
@@ -3933,7 +4333,7 @@ export default function App(){
   }, [scopeRows, rows]);
 
   const scopePctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, percentileStats, metricValue), [displayScopeRows, percentileStats, metricValue]);
-  const scopeAllLoadedPctIndex = useMemo(() => buildPercentileIndex(displayScopeRows, percentileStats, metricValue), [displayScopeRows, percentileStats, metricValue]);
+  const scopeAllLoadedPctIndex = scopePctIndex;
 
   /* ---------- Players list & selection sanity ---------- */
   const players = useMemo(() => filteredRows.map(r => r["Name"]).filter(Boolean), [filteredRows]);
@@ -5036,6 +5436,12 @@ export default function App(){
                 Import JSON
                 <input type="file" accept=".json" onChange={importArchetypes} style={{display:"none"}} />
               </label>
+              {selectedArchetypeId && (
+                <button className="btn ghost tight" onClick={() => {
+                  setSelectedArchetypeId("");
+                  cancelCaEdit();
+                }}>New Archetype</button>
+              )}
               {caEditId ? (
                 <button className="btn" onClick={cancelCaEdit}>Cancel Edit</button>
               ) : null}
@@ -6766,7 +7172,7 @@ export default function App(){
             <div className="chipRow">
               {sidebarPositions.map(p => (
                 <button key={p} className={`chip ${posCohort.includes(p)?"active":""}`}
-                  onClick={()=> setPosCohort(posCohort.includes(p) ? posCohort.filter(x=>x!==p) : [...posCohort, p]) }>
+                  onClick={()=> setPosCohort(prev => (prev || []).includes(p) ? (prev || []).filter(x=>x!==p) : [...(prev || []), p]) }>
                   {p}
                 </button>
               ))}
