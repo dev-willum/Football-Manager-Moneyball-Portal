@@ -62,7 +62,6 @@ fn open_db(app: &AppHandle) -> Result<Connection, String> {
     .execute(
       "CREATE TABLE IF NOT EXISTS dataset_cache (\
         key TEXT PRIMARY KEY,\
-        rows_json TEXT NOT NULL,\
         columns_json TEXT NOT NULL,\
         row_count INTEGER NOT NULL,\
         column_count INTEGER NOT NULL,\
@@ -71,6 +70,20 @@ fn open_db(app: &AppHandle) -> Result<Connection, String> {
       [],
     )
     .map_err(|err| err.to_string())?;
+  // Drop the legacy rows_json column from databases created before this table was slimmed down.
+  let has_legacy_rows_json: bool = conn
+    .query_row(
+      "SELECT COUNT(*) FROM pragma_table_info('dataset_cache') WHERE name = 'rows_json'",
+      [],
+      |row| row.get::<_, i64>(0),
+    )
+    .map_err(|err| err.to_string())?
+    > 0;
+  if has_legacy_rows_json {
+    conn
+      .execute("ALTER TABLE dataset_cache DROP COLUMN rows_json", [])
+      .map_err(|err| err.to_string())?;
+  }
   conn
     .execute(
       "CREATE TABLE IF NOT EXISTS dataset_rows (\
@@ -146,16 +159,31 @@ fn extract_f64(value: &serde_json::Value, key: &str) -> Option<f64> {
   }
 }
 
+const ALLOWED_IMPORT_EXTENSIONS: [&str; 3] = ["csv", "html", "htm"];
+
+#[tauri::command]
+fn read_import_file(path: String) -> Result<String, String> {
+  let path_buf = PathBuf::from(&path);
+  let ext = path_buf
+    .extension()
+    .and_then(|e| e.to_str())
+    .map(|e| e.to_lowercase())
+    .unwrap_or_default();
+  if !ALLOWED_IMPORT_EXTENSIONS.contains(&ext.as_str()) {
+    return Err(format!("Unsupported file type: .{}", ext));
+  }
+  fs::read_to_string(&path_buf).map_err(|err| err.to_string())
+}
+
 #[tauri::command]
 fn save_dataset(app: AppHandle, payload: DatasetPayload) -> Result<(), String> {
   let mut conn = open_db(&app)?;
-  let rows_json = "[]".to_string();
   let columns_json = serde_json::to_string(&payload.columns).map_err(|err| err.to_string())?;
   let row_count = payload.rows.len() as i64;
   let column_count = payload.columns.len() as i64;
 
-  conn.execute("DELETE FROM dataset_rows", []).map_err(|err| err.to_string())?;
   let tx = conn.transaction().map_err(|err| err.to_string())?;
+  tx.execute("DELETE FROM dataset_rows", []).map_err(|err| err.to_string())?;
   {
     let mut stmt = tx
       .prepare(
@@ -180,21 +208,19 @@ fn save_dataset(app: AppHandle, payload: DatasetPayload) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     }
   }
-  tx.commit().map_err(|err| err.to_string())?;
 
-  conn
-    .execute(
-      "INSERT INTO dataset_cache (key, rows_json, columns_json, row_count, column_count, saved_at)\
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6)\
+  tx.execute(
+      "INSERT INTO dataset_cache (key, columns_json, row_count, column_count, saved_at)\
+       VALUES (?1, ?2, ?3, ?4, ?5)\
        ON CONFLICT(key) DO UPDATE SET\
-         rows_json = excluded.rows_json,\
          columns_json = excluded.columns_json,\
          row_count = excluded.row_count,\
          column_count = excluded.column_count,\
          saved_at = excluded.saved_at",
-      params![DATASET_KEY, rows_json, columns_json, row_count, column_count, payload.saved_at],
+      params![DATASET_KEY, columns_json, row_count, column_count, payload.saved_at],
     )
     .map_err(|err| err.to_string())?;
+  tx.commit().map_err(|err| err.to_string())?;
   Ok(())
 }
 
@@ -202,23 +228,18 @@ fn save_dataset(app: AppHandle, payload: DatasetPayload) -> Result<(), String> {
 fn load_dataset(app: AppHandle) -> Result<Option<DatasetPayload>, String> {
   let conn = open_db(&app)?;
   let mut stmt = conn
-    .prepare("SELECT rows_json, columns_json, saved_at FROM dataset_cache WHERE key = ?1")
+    .prepare("SELECT columns_json, saved_at FROM dataset_cache WHERE key = ?1")
     .map_err(|err| err.to_string())?;
   let result = stmt.query_row(params![DATASET_KEY], |row| {
-    let rows_json: String = row.get(0)?;
-    let columns_json: String = row.get(1)?;
-    let saved_at: i64 = row.get(2)?;
-    Ok((rows_json, columns_json, saved_at))
+    let columns_json: String = row.get(0)?;
+    let saved_at: i64 = row.get(1)?;
+    Ok((columns_json, saved_at))
   });
 
   match result {
-    Ok((rows_json, columns_json, saved_at)) => {
+    Ok((columns_json, saved_at)) => {
       let columns: Vec<String> = serde_json::from_str(&columns_json).map_err(|err| err.to_string())?;
       let rows = load_rows_from_table(&conn)?;
-      if rows.is_empty() {
-        let fallback_rows: Vec<serde_json::Value> = serde_json::from_str(&rows_json).map_err(|err| err.to_string())?;
-        return Ok(Some(DatasetPayload { rows: fallback_rows, columns, saved_at, row_index: None }));
-      }
       Ok(Some(DatasetPayload { rows, columns, saved_at, row_index: None }))
     }
     Err(rusqlite::Error::QueryReturnedNoRows) => {
@@ -390,6 +411,11 @@ fn set_metric_cache(app: AppHandle, key: String, value: serde_json::Value) -> Re
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(
+      tauri_plugin_window_state::Builder::default().build(),
+    )
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_updater::Builder::new().build())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -401,6 +427,7 @@ pub fn run() {
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
+      read_import_file,
       save_dataset,
       load_dataset,
       clear_dataset,
